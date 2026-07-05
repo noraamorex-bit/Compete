@@ -1,0 +1,105 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+  :root {
+    color-scheme: light;
+  }
+  .dark {
+    color-scheme: dark; /* native pickers & scrollbars match the theme */
+  }
+  html {
+    -webkit-tap-highlight-color: transparent;
+    scroll-behavior: smooth;
+  }
+  body {
+    @apply bg-mist font-sans text-ink antialiased dark:bg-night dark:text-night-text;
+    transition: background-color 0.25s ease, color 0.25s ease;
+    text-rendering: optimizeLegibility;
+  }
+  ::selection {
+    @apply bg-marigold/30;
+  }
+  input,
+  textarea,
+  select,
+  button {
+    font: inherit;
+  }
+  :focus-visible {
+    @apply outline-none ring-2 ring-marigold/80 ring-offset-2 ring-offset-mist dark:ring-offset-night;
+  }
+  @media (prefers-reduced-motion: reduce) {
+    *,
+    *::before,
+    *::after {
+      animation-duration: 0.01ms !important;
+      transition-duration: 0.01ms !important;
+    }
+    html {
+      scroll-behavior: auto;
+    }
+  }
+}
+
+@layer components {
+  .card {
+    @apply rounded-2xl border border-ink/[0.06] bg-paper shadow-card transition-colors duration-200 dark:border-night-edge dark:bg-night-card;
+  }
+  .field {
+    @apply w-full min-h-[44px] rounded-xl border border-ink/10 bg-mist/60 px-3.5 py-2.5 text-[15px] text-ink shadow-[inset_0_1px_2px_rgba(20,26,45,.03)] placeholder:text-ink-faint transition duration-150 hover:border-ink/20 focus:border-marigold focus:bg-paper focus:shadow-none dark:border-night-edge dark:bg-night/70 dark:text-night-text dark:shadow-none dark:placeholder:text-night-soft/60 dark:hover:border-night-soft/40 dark:focus:border-marigold dark:focus:bg-night-card;
+  }
+  /* select with a custom chevron so it looks intentional in both themes */
+  .field-select {
+    @apply field appearance-none bg-no-repeat pr-10;
+    background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%238B93AB' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='m6 9 6 6 6-6'/%3E%3C/svg%3E");
+    background-position: right 0.8rem center;
+    background-size: 1rem;
+  }
+  .field-label {
+    @apply mb-1.5 block text-[13px] font-semibold tracking-[0.01em] text-ink-soft dark:text-night-soft;
+  }
+  .btn {
+    @apply inline-flex min-h-[42px] items-center justify-center gap-2 rounded-xl px-4 py-2.5 text-sm font-semibold transition duration-150 active:scale-[.97];
+  }
+  .btn-primary {
+    @apply btn bg-gradient-to-b from-marigold to-marigold-deep text-white shadow-[0_1px_0_rgba(255,255,255,.25)_inset,0_6px_16px_-6px_rgba(199,124,8,.55)] hover:brightness-[1.06] active:brightness-95;
+  }
+  .btn-ghost {
+    @apply btn text-ink-soft hover:bg-ink/[0.06] hover:text-ink dark:text-night-soft dark:hover:bg-white/[0.07] dark:hover:text-night-text;
+  }
+  .btn-quiet {
+    @apply btn border border-ink/10 bg-paper text-ink shadow-[0_1px_2px_rgba(20,26,45,.04)] hover:border-ink/25 dark:border-night-edge dark:bg-night-card dark:text-night-text dark:shadow-none dark:hover:border-night-soft/50;
+  }
+  .chip {
+    @apply inline-flex min-h-[38px] shrink-0 items-center gap-1.5 rounded-full px-3.5 py-2 text-[13px] font-semibold transition duration-150;
+  }
+  .icon-btn {
+    @apply grid h-9 w-9 place-items-center rounded-xl text-ink-faint transition duration-150 hover:bg-ink/[0.06] hover:text-ink active:scale-90 dark:text-night-soft dark:hover:bg-white/[0.08] dark:hover:text-night-text;
+  }
+  .eyebrow {
+    @apply text-[11.5px] font-semibold uppercase tracking-[0.12em] text-ink-faint dark:text-night-soft/70;
+  }
+}
+
+/* Thin, quiet scrollbar for horizontal chip rails */
+.rail {
+  scrollbar-width: thin;
+  scrollbar-color: rgba(120, 130, 160, 0.35) transparent;
+}
+.rail::-webkit-scrollbar {
+  height: 5px;
+}
+.rail::-webkit-scrollbar-thumb {
+  border-radius: 999px;
+  background: rgba(120, 130, 160, 0.3);
+}
+.rail::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+/* Respect the home-indicator area on phones */
+.safe-bottom {
+  padding-bottom: max(1.5rem, env(safe-area-inset-bottom));
+}
