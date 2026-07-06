@@ -57,6 +57,8 @@ html, body {
   position: absolute; width: 2px; height: 2px; left: -1px; top: -1px;
   background: #fff; border-radius: 50%;
 }
+.ch-line { transition: opacity .12s; }
+#crosshair.ads .ch-line { opacity: 0; }
 
 /* --- Hitmarker --- */
 #hitmarker {
@@ -237,10 +239,11 @@ html, body {
 #mc-buttons {
   position: absolute; right: calc(14px + var(--sar)); bottom: calc(18px + var(--sab));
   display: grid;
-  grid-template-areas: ". reload" "sprint jump" "fire fire";
+  grid-template-areas: "aim reload" "sprint jump" "fire fire";
   gap: 12px; justify-items: end;
   pointer-events: none;
 }
+#mc-aim { grid-area: aim; }
 .mc-btn {
   pointer-events: auto;
   width: 58px; height: 58px; border-radius: 50%;
@@ -315,6 +318,35 @@ html, body {
   box-shadow: 0 6px 26px rgba(255,150,45,.35);
 }
 .btn-primary:hover { box-shadow: 0 8px 34px rgba(255,150,45,.5); background: linear-gradient(135deg, #ffc250, var(--accent-hot)); }
+
+/* --- Weapon select (start menu) --- */
+#weapon-select {
+  display: flex; gap: 10px; justify-content: center; flex-wrap: wrap;
+  margin-bottom: 6px;
+}
+.wpn-card {
+  min-width: 108px;
+  padding: 10px 14px;
+  border-radius: 10px;
+  background: rgba(255,255,255,.06);
+  border: 1.5px solid rgba(255,255,255,.14);
+  cursor: pointer;
+  text-align: center;
+  font-family: var(--font);
+  color: var(--text);
+  transition: transform .12s, border-color .15s, background .15s;
+}
+.wpn-card:hover { background: rgba(255,255,255,.11); transform: translateY(-1px); }
+.wpn-card .wpn-name { font-size: 14px; font-weight: 900; letter-spacing: 2px; }
+.wpn-card .wpn-desc { font-size: 10px; letter-spacing: 1.5px; color: var(--text-dim); margin-top: 3px; }
+.wpn-card.selected {
+  border-color: var(--accent);
+  background: rgba(255,181,46,.14);
+  box-shadow: 0 0 18px rgba(255,150,45,.2);
+}
+.wpn-card.locked { opacity: .45; cursor: default; }
+.wpn-card.locked:hover { transform: none; background: rgba(255,255,255,.06); }
+.wpn-card.locked .wpn-desc { color: var(--danger); }
 
 /* --- Settings (pause menu) --- */
 .settings-block {

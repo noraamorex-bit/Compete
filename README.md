@@ -6,8 +6,8 @@ A complete, polished browser first-person shooter. One arena, one rifle, endless
 
 ## Features
 
-- Full FPS movement: sprint, jump, acceleration, step-up, camera bob and sway
-- One satisfying assault rifle: recoil, bloom spread, muzzle flash, tracers, reload animation, hit markers, floating damage numbers
+- Full FPS movement: sprint (with FOV kick), jump, acceleration, step-up, camera bob and sway
+- Three unlockable weapons (assault rifle, SMG, marksman rifle) with aim-down-sights, recoil, bloom spread, muzzle flash, tracers, reload animations, hit markers, floating damage numbers
 - Sentinel drone enemies: wander → detect → chase/orbit → plasma bursts, death animations, respawns
 - Desktop **and** mobile: pointer-lock mouse aim + WASD, or virtual joystick + swipe look + touch buttons (auto-detected)
 - Minimal modern HUD: health, ammo, kills, streaks, dynamic crosshair
@@ -22,8 +22,9 @@ A complete, polished browser first-person shooter. One arena, one rifle, endless
 | Action | Desktop | Mobile |
 |---|---|---|
 | Move | WASD | Left-side virtual joystick |
-| Aim | Mouse (pointer lock) | Swipe right side |
+| Look | Mouse (pointer lock) | Swipe right side |
 | Shoot | Left click | ◉ Fire button |
+| Aim (ADS) | Hold right click | Aim toggle button |
 | Jump | Space | Jump button |
 | Sprint | Shift | Sprint toggle (or push joystick past rim) |
 | Reload | R | Reload button |

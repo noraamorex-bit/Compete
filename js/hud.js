@@ -119,6 +119,10 @@ export class HUD {
     }
   }
 
+  setADS(blend) {
+    this.crosshair.classList.toggle('ads', blend > 0.6);
+  }
+
   setCrosshairSpread(spreadRad, moving) {
     // Convert weapon spread to a pixel gap, roughly.
     const px = clamp(6 + spreadRad * 900 + (moving ? 4 : 0), 6, 30);

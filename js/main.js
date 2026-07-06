@@ -32,11 +32,19 @@ const scene = new THREE.Scene();
 const camera = new THREE.PerspectiveCamera(isTouchDevice ? 70 : 75, innerWidth / innerHeight, 0.05, 400);
 scene.add(camera);
 
+// ---------- Weapon progression ----------
+let totalKills = Number(localStorage.getItem('voltage.totalKills') || 0);
+let selectedWeaponId = localStorage.getItem('voltage.weapon') || 'volt';
+
+const weaponStats = (id) => CONFIG.weapons.find((w) => w.id === id) || CONFIG.weapons[0];
+const weaponUnlocked = (w) => totalKills >= w.unlockKills;
+if (!weaponUnlocked(weaponStats(selectedWeaponId))) selectedWeaponId = 'volt';
+
 // ---------- World & actors ----------
 const world = buildWorld(scene, { shadows: true });
 const effects = new Effects(scene);
 const player = new Player(camera, world.colliders);
-const weapon = new Weapon(camera, effects, world.colliders);
+const weapon = new Weapon(camera, effects, world.colliders, weaponStats(selectedWeaponId));
 const enemies = new EnemyManager(scene, effects, world.colliders, world.enemySpawns);
 const hud = new HUD();
 
@@ -55,6 +63,7 @@ let bestScore = Number(localStorage.getItem('voltage.bestScore') || 0);
 let bestWave = Number(localStorage.getItem('voltage.bestWave') || 0);
 
 const LOOK_SENS = 0.0027;
+const BASE_FOV = isTouchDevice ? 70 : 75;
 
 // ---------- Settings ----------
 const settings = {
@@ -103,6 +112,47 @@ function refreshBestLine() {
   $('best-wave').textContent = bestWave;
 }
 refreshBestLine();
+
+// ---------- Weapon select UI ----------
+const weaponSelectEl = $('weapon-select');
+
+function refreshWeaponMenu() {
+  weaponSelectEl.innerHTML = '';
+  for (const w of CONFIG.weapons) {
+    const unlocked = weaponUnlocked(w);
+    const card = document.createElement('button');
+    card.className = 'wpn-card'
+      + (w.id === selectedWeaponId ? ' selected' : '')
+      + (unlocked ? '' : ' locked');
+    card.innerHTML = `
+      <div class="wpn-name">${w.name}</div>
+      <div class="wpn-desc">${unlocked ? w.desc : `${Math.min(totalKills, w.unlockKills)}/${w.unlockKills} KILLS`}</div>`;
+    if (unlocked) {
+      card.addEventListener('click', () => {
+        audio.init();
+        selectedWeaponId = w.id;
+        localStorage.setItem('voltage.weapon', selectedWeaponId);
+        weapon.setStats(w);
+        refreshWeaponMenu();
+        audio.ui();
+      });
+    }
+    weaponSelectEl.appendChild(card);
+  }
+}
+refreshWeaponMenu();
+
+function trackKillProgress() {
+  totalKills++;
+  localStorage.setItem('voltage.totalKills', String(totalKills));
+  for (const w of CONFIG.weapons) {
+    if (w.unlockKills === totalKills) {
+      hud.waveBannerShow(`${w.name} UNLOCKED`, 'EQUIP IT FROM THE MENU');
+      audio.waveClear();
+      refreshWeaponMenu();
+    }
+  }
+}
 
 function setState(next) {
   state = next;
@@ -250,6 +300,7 @@ enemies.onKill = (pos, crit) => {
   hud.setKills(kills);
   hud.setScore(score);
   player.addTrauma(0.12);
+  trackKillProgress();
 };
 
 enemies.onWaveCleared = () => {
@@ -278,13 +329,22 @@ function frame(now) {
   if (state === State.PLAYING) {
     runTime += dt;
 
-    // Look
+    // Look — slower while aiming for fine control.
     const look = input.consumeLook();
-    player.look(look.x, look.y, LOOK_SENS * settings.sens * (isTouchDevice ? 1.2 : 1));
+    const adsSens = 1 - 0.35 * weapon.adsBlend;
+    player.look(look.x, look.y, LOOK_SENS * settings.sens * adsSens * (isTouchDevice ? 1.2 : 1));
 
-    player.update(dt, input);
+    player.update(dt, input, weapon.adsBlend);
     weapon.update(dt, input, player, enemies, look.x, look.y);
     enemies.update(dt, player);
+
+    // FOV: sprint widens, ADS narrows toward the weapon's zoom.
+    const targetFov = (BASE_FOV + CONFIG.player.sprintFovKick * player.sprintBlend)
+      * (1 - weapon.adsBlend) + weapon.stats.adsFov * weapon.adsBlend;
+    if (Math.abs(camera.fov - targetFov) > 0.05) {
+      camera.fov = targetFov;
+      camera.updateProjectionMatrix();
+    }
 
     // Combo window decay
     if (comboT > 0) {
@@ -311,7 +371,12 @@ function frame(now) {
     hud.setAmmo(weapon.ammo, weapon.reloading);
     hud.setCrosshairSpread(weapon.currentSpread, player.speed2D > 1);
     hud.setCombo(multiplier, comboT / CONFIG.score.comboWindow);
+    hud.setADS(weapon.adsBlend);
   } else if (state === State.MENU || state === State.DEAD) {
+    if (camera.fov !== BASE_FOV) {
+      camera.fov = BASE_FOV;
+      camera.updateProjectionMatrix();
+    }
     // Slow cinematic orbit behind the menus.
     const t = now * 0.00006;
     camera.position.set(Math.sin(t) * 26, 9, Math.cos(t) * 26);
@@ -331,6 +396,7 @@ window.__game = {
   get multiplier() { return multiplier; },
   get wave() { return wave; },
   get waveState() { return waveState; },
+  get totalKills() { return totalKills; },
 };
 
 applyGraphics();

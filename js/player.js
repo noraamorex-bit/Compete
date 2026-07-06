@@ -26,6 +26,7 @@ export class Player {
     this.alive = true;
     this.timeSinceDamage = 999;
     this.sprinting = false;
+    this.sprintBlend = 0;     // 0..1, drives the FOV kick
 
     // Feel
     this.bobPhase = 0;
@@ -52,6 +53,7 @@ export class Player {
     this.timeSinceDamage = 999;
     this.trauma = 0;
     this.recoilPitch = 0;
+    this.sprintBlend = 0;
   }
 
   addTrauma(t) { this.trauma = clamp(this.trauma + t, 0, 1); }
@@ -89,7 +91,8 @@ export class Player {
     this.pitch = clamp(this.pitch, -Math.PI / 2 + 0.02, Math.PI / 2 - 0.02);
   }
 
-  update(dt, input) {
+  // adsBlend (0..1) slows movement and suppresses sprint while aiming.
+  update(dt, input, adsBlend = 0) {
     if (!this.alive) return;
     this.timeSinceDamage += dt;
 
@@ -100,8 +103,12 @@ export class Player {
 
     // --- Horizontal movement ---
     const movingInput = Math.abs(input.moveX) > 0.05 || Math.abs(input.moveZ) > 0.05;
-    this.sprinting = input.sprint && input.moveZ > 0.1;
-    const targetSpeed = this.sprinting ? P.sprintSpeed : P.walkSpeed;
+    this.sprinting = input.sprint && input.moveZ > 0.1 && adsBlend < 0.4;
+    const targetSpeed = (this.sprinting ? P.sprintSpeed : P.walkSpeed) * (1 - 0.35 * adsBlend);
+
+    // Sprint FOV blend (only counts once actually moving fast).
+    const sprintTarget = this.sprinting && this.speed2D > P.walkSpeed * 0.85 ? 1 : 0;
+    this.sprintBlend += (sprintTarget - this.sprintBlend) * damp(7, dt);
 
     this._fwd.set(-Math.sin(this.yaw), 0, -Math.cos(this.yaw));
     this._right.set(-this._fwd.z, 0, this._fwd.x); // fwd × up

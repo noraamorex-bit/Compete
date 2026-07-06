@@ -15,6 +15,7 @@ class Input {
     this.lookDX = 0;       // accumulated look delta (px), consumed per frame
     this.lookDY = 0;
     this.firing = false;
+    this.aiming = false;
     this.jumpQueued = false;
     this.sprint = false;
     this.reloadQueued = false;
@@ -69,16 +70,21 @@ class Input {
       this.lookDY += e.movementY;
     });
     document.addEventListener('mousedown', (e) => {
-      if (this._locked && e.button === 0) this.firing = true;
+      if (!this._locked) return;
+      if (e.button === 0) this.firing = true;
+      if (e.button === 2) this.aiming = true;
     });
     document.addEventListener('mouseup', (e) => {
       if (e.button === 0) this.firing = false;
+      if (e.button === 2) this.aiming = false;
     });
+    document.addEventListener('contextmenu', (e) => e.preventDefault());
     document.addEventListener('pointerlockchange', () => {
       const was = this._locked;
       this._locked = document.pointerLockElement != null;
       if (was && !this._locked) {
         this.firing = false;
+        this.aiming = false;
         this.onPause?.();     // Esc released the lock → pause
       }
     });
@@ -192,6 +198,14 @@ class Input {
       sprintBtn.classList.toggle('toggled', this._sprintToggle);
       this.onAnyGesture?.();
     }, { passive: false });
+
+    this._aimBtn = document.getElementById('mc-aim');
+    this._aimBtn.addEventListener('touchstart', (e) => {
+      e.preventDefault(); e.stopPropagation();
+      this.aiming = !this.aiming;
+      this._aimBtn.classList.toggle('toggled', this.aiming);
+      this.onAnyGesture?.();
+    }, { passive: false });
   }
 
   // Read-and-clear accumulated look delta.
@@ -207,10 +221,12 @@ class Input {
 
   reset() {
     this.firing = false;
+    this.aiming = false;
     this.jumpQueued = false;
     this.reloadQueued = false;
     this.lookDX = 0;
     this.lookDY = 0;
+    this._aimBtn?.classList.remove('toggled');
   }
 }
 
