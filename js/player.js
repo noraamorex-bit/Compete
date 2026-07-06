@@ -104,7 +104,7 @@ export class Player {
     const targetSpeed = this.sprinting ? P.sprintSpeed : P.walkSpeed;
 
     this._fwd.set(-Math.sin(this.yaw), 0, -Math.cos(this.yaw));
-    this._right.set(this._fwd.z, 0, -this._fwd.x);
+    this._right.set(-this._fwd.z, 0, this._fwd.x); // fwd × up
     this._wish.set(0, 0, 0)
       .addScaledVector(this._fwd, input.moveZ)
       .addScaledVector(this._right, input.moveX);
