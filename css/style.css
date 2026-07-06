@@ -323,6 +323,7 @@ html, body {
 #weapon-select {
   display: flex; gap: 10px; justify-content: center; flex-wrap: wrap;
   margin-bottom: 6px;
+  max-width: 460px;
 }
 .wpn-card {
   min-width: 108px;

@@ -207,6 +207,20 @@ function pause() {
   input.releaseLock();
 }
 
+// Back to the start screen (weapon select lives there).
+function goToMenu() {
+  input.releaseLock();
+  weapon.reset();
+  player.respawn(world.playerSpawn);
+  player.alive = false; // menu-backdrop drones ignore a dead player
+  enemies.clearAll();
+  enemies.beginWave({ count: 5, maxAlive: 5 }, new THREE.Vector3(0, 0, 0));
+  effects.clear();
+  refreshWeaponMenu();
+  refreshBestLine();
+  setState(State.MENU);
+}
+
 function die() {
   input.releaseLock();
   if (score > bestScore) {
@@ -232,6 +246,8 @@ $('btn-play').addEventListener('click', clickAnd(startRun));
 $('btn-resume').addEventListener('click', clickAnd(resume));
 $('btn-restart').addEventListener('click', clickAnd(startRun));
 $('btn-respawn').addEventListener('click', clickAnd(startRun));
+$('btn-menu').addEventListener('click', clickAnd(goToMenu));
+$('btn-death-menu').addEventListener('click', clickAnd(goToMenu));
 $('btn-pause-hud').addEventListener('click', clickAnd(pause));
 btnSound.addEventListener('click', () => {
   audio.init();

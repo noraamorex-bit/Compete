@@ -204,48 +204,62 @@ export class Weapon {
     this.bloom = Math.min(this.bloom + S.spreadPerShot, 0.028);
 
     const origin = this.camera.getWorldPosition(this._tmpV);
-    this.camera.getWorldDirection(this._dir);
-    this._dir.x += rand(-spread, spread);
-    this._dir.y += rand(-spread, spread);
-    this._dir.z += rand(-spread, spread);
-    this._dir.normalize();
+    const baseDir = this.camera.getWorldDirection(new THREE.Vector3());
+    const muzzlePos = this.muzzle.getWorldPosition(new THREE.Vector3());
+    const pellets = S.pellets || 1;
 
-    // World geometry hit
-    const worldHit = raycastColliders(
-      origin.x, origin.y, origin.z,
-      this._dir.x, this._dir.y, this._dir.z,
-      this.colliders, S.range
-    );
-    const maxDist = worldHit ? worldHit.dist : S.range;
+    // Damage per pellet, aggregated per enemy so one shot shows one number.
+    const hits = new Map(); // enemy -> { total, crit, point }
+    for (let i = 0; i < pellets; i++) {
+      this._dir.copy(baseDir);
+      this._dir.x += rand(-spread, spread);
+      this._dir.y += rand(-spread, spread);
+      this._dir.z += rand(-spread, spread);
+      this._dir.normalize();
 
-    // Enemy hit (closer than world geometry?)
-    const enemyHit = enemies.raycast(origin, this._dir, maxDist);
+      const worldHit = raycastColliders(
+        origin.x, origin.y, origin.z,
+        this._dir.x, this._dir.y, this._dir.z,
+        this.colliders, S.range
+      );
+      const maxDist = worldHit ? worldHit.dist : S.range;
+      const enemyHit = enemies.raycast(origin, this._dir, maxDist);
 
-    const hitPoint = this._tmpV2.copy(origin).addScaledVector(
-      this._dir, enemyHit ? enemyHit.dist : maxDist
-    );
+      const hitPoint = this._tmpV2.copy(origin).addScaledVector(
+        this._dir, enemyHit ? enemyHit.dist : maxDist
+      );
 
-    if (enemyHit) {
-      const dmg = S.damage * (enemyHit.crit ? S.critMultiplier : 1);
-      const result = enemies.applyDamage(enemyHit.enemy, dmg, hitPoint, enemyHit.crit);
-      this.effects.burst(hitPoint, enemyHit.crit ? 0xff8a3d : 0xffd166, 8, 3.5, 4, 0.35);
-      this.effects.damageNumber(hitPoint, dmg, enemyHit.crit);
-      audio.hit(enemyHit.crit);
-      this.onHit?.(result === 'killed' ? 'kill' : enemyHit.crit ? 'crit' : 'hit');
-    } else if (worldHit) {
-      this.effects.burst(hitPoint, 0xcfd6e4, 6, 3, 8, 0.3);
-    } else if (this._dir.y < -0.01) {
-      // Floor plane hit
-      const t = -origin.y / this._dir.y;
-      if (t < S.range) {
-        hitPoint.copy(origin).addScaledVector(this._dir, t);
-        this.effects.burst(hitPoint, 0xcfd6e4, 6, 3, 8, 0.3);
+      if (enemyHit) {
+        let rec = hits.get(enemyHit.enemy);
+        if (!rec) { rec = { total: 0, crit: false, point: hitPoint.clone() }; hits.set(enemyHit.enemy, rec); }
+        rec.total += S.damage * (enemyHit.crit ? S.critMultiplier : 1);
+        rec.crit = rec.crit || enemyHit.crit;
+        this.effects.burst(hitPoint, enemyHit.crit ? 0xff8a3d : 0xffd166, 4, 3.5, 4, 0.3);
+      } else if (worldHit) {
+        this.effects.burst(hitPoint, 0xcfd6e4, 3, 3, 8, 0.25);
+      } else if (this._dir.y < -0.01) {
+        // Floor plane hit
+        const t = -origin.y / this._dir.y;
+        if (t < S.range) {
+          hitPoint.copy(origin).addScaledVector(this._dir, t);
+          this.effects.burst(hitPoint, 0xcfd6e4, 3, 3, 8, 0.25);
+        }
       }
+      this.effects.tracer(muzzlePos, hitPoint);
     }
 
-    // Tracer from muzzle
-    const muzzlePos = this.muzzle.getWorldPosition(new THREE.Vector3());
-    this.effects.tracer(muzzlePos, hitPoint);
+    // Apply aggregated damage.
+    let killed = false, anyCrit = false;
+    for (const [enemy, rec] of hits) {
+      const result = enemies.applyDamage(enemy, rec.total, rec.point, rec.crit);
+      this.effects.damageNumber(rec.point, rec.total, rec.crit);
+      if (result === 'killed') killed = true;
+      if (rec.crit) anyCrit = true;
+    }
+    if (hits.size > 0) {
+      audio.hit(anyCrit);
+      this.onHit?.(killed ? 'kill' : anyCrit ? 'crit' : 'hit');
+    }
 
     // Feel: kick, flash, recoil, shake, sound — recoil softened while aiming.
     const recoilScale = 1 - 0.35 * this.adsBlend;

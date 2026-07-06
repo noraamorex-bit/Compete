@@ -19,6 +19,7 @@ export const CONFIG = {
   },
 
   // Weapon roster — later entries unlock via lifetime kills.
+  // `pellets` > 1 makes a shot fire multiple hitscan pellets (shotgun).
   weapons: [
     {
       id: 'volt', name: 'VOLT-7', desc: 'ASSAULT RIFLE', unlockKills: 0,
@@ -29,6 +30,14 @@ export const CONFIG = {
       accent: 0xff8a3d, barrel: 1.0,
     },
     {
+      id: 'scatter', name: 'SCATTER-6', desc: 'SHOTGUN', unlockKills: 10,
+      damage: 16, pellets: 7, critMultiplier: 1.5, magSize: 6,
+      fireInterval: 0.9, reloadTime: 2.0, range: 40,
+      baseSpread: 0.04, moveSpread: 0.012, spreadPerShot: 0.002, spreadRecovery: 0.1,
+      recoilKick: 0.032, adsFov: 62,
+      accent: 0xffd166, barrel: 0.85,
+    },
+    {
       id: 'spark', name: 'SPARK-9', desc: 'SMG', unlockKills: 25,
       damage: 15, critMultiplier: 2.0, magSize: 42,
       fireInterval: 1 / 17, reloadTime: 1.25, range: 90,
@@ -37,12 +46,28 @@ export const CONFIG = {
       accent: 0x4de8ff, barrel: 0.7,
     },
     {
+      id: 'storm', name: 'STORM-99', desc: 'LMG', unlockKills: 50,
+      damage: 16, critMultiplier: 2.0, magSize: 80,
+      fireInterval: 1 / 15, reloadTime: 2.4, range: 110,
+      baseSpread: 0.011, moveSpread: 0.024, spreadPerShot: 0.004, spreadRecovery: 0.1,
+      recoilKick: 0.009, adsFov: 58,
+      accent: 0x53e07f, barrel: 1.15,
+    },
+    {
       id: 'arc', name: 'ARC-12', desc: 'MARKSMAN', unlockKills: 75,
       damage: 68, critMultiplier: 2.5, magSize: 12,
       fireInterval: 0.36, reloadTime: 1.8, range: 160,
       baseSpread: 0.0015, moveSpread: 0.014, spreadPerShot: 0.014, spreadRecovery: 0.06,
       recoilKick: 0.026, adsFov: 38,
       accent: 0xb07aff, barrel: 1.35,
+    },
+    {
+      id: 'titan', name: 'TITAN-50', desc: 'HAND CANNON', unlockKills: 100,
+      damage: 120, critMultiplier: 3.0, magSize: 5,
+      fireInterval: 0.65, reloadTime: 1.7, range: 140,
+      baseSpread: 0.003, moveSpread: 0.016, spreadPerShot: 0.02, spreadRecovery: 0.07,
+      recoilKick: 0.042, adsFov: 50,
+      accent: 0xff4d5e, barrel: 0.55,
     },
   ],
 
