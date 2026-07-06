@@ -8,11 +8,12 @@ A complete, polished browser first-person shooter. One arena, one rifle, endless
 
 - Full FPS movement: sprint (with FOV kick), jump, acceleration, step-up, camera bob and sway
 - Six unlockable weapons (assault rifle, shotgun, SMG, LMG, marksman rifle, hand cannon) with aim-down-sights, recoil, bloom spread, muzzle flash, tracers, reload animations, hit markers, floating damage numbers
-- Sentinel drone enemies: wander → detect → chase/orbit → plasma bursts, death animations, respawns
+- Three enemy types: sentinel drones (chase/orbit + plasma bursts), kamikaze rushers (charge and detonate), and boss sentinels every 5th wave with their own health bar
+- Pickups: health packs and double-damage cores drop from kills (bosses always pay out)
 - Desktop **and** mobile: pointer-lock mouse aim + WASD, or virtual joystick + swipe look + touch buttons (auto-detected)
-- Minimal modern HUD: health, ammo, kills, streaks, dynamic crosshair
+- Minimal modern HUD: health, ammo, kills, streaks, dynamic crosshair, directional damage indicators
 - Procedural Web Audio sound effects — zero audio assets
-- Wave mode: escalating rounds with more, tougher, faster drones and intermissions
+- Wave mode: escalating rounds with more, tougher, faster enemies and intermissions
 - Score system with a kill-chain multiplier (up to ×8) and crit bonuses; best score/wave persistence
 - Settings: sensitivity slider and a graphics quality toggle (pause menu)
 - Installable PWA with offline play (service worker + manifest + app icon)

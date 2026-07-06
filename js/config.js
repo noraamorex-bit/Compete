@@ -73,22 +73,44 @@ export const CONFIG = {
 
   enemy: {
     maxAlive: 6,
-    health: 100,
-    hoverHeight: 1.55,
-    wanderSpeed: 2.1,
-    chaseSpeed: 4.4,
     detectRange: 26,
     loseRange: 34,
-    attackRange: 21,
-    preferredRange: 11,
-    burstCount: 3,
     burstInterval: 0.14,
-    burstCooldownMin: 1.1,
-    burstCooldownMax: 2.0,
     projectileSpeed: 24,
     projectileDamage: 11,
-    bodyRadius: 0.72,
-    coreRadius: 0.3,
+
+    // Per-type stats. `score` is the base kill reward.
+    types: {
+      drone: {
+        health: 100, hover: 1.55, wanderSpeed: 2.1, chaseSpeed: 4.4,
+        bodyRadius: 0.72, coreRadius: 0.3, canShoot: true,
+        attackRange: 21, preferredRange: 11,
+        burstCount: 3, burstCooldownMin: 1.1, burstCooldownMax: 2.0,
+        score: 100,
+      },
+      rusher: {
+        health: 45, hover: 1.0, wanderSpeed: 3.0, chaseSpeed: 7.2,
+        bodyRadius: 0.5, coreRadius: 0.22, canShoot: false,
+        detonateRange: 1.7, detonateDamage: 22,
+        score: 80,
+      },
+      boss: {
+        health: 850, hover: 2.3, wanderSpeed: 1.6, chaseSpeed: 2.4,
+        bodyRadius: 1.75, coreRadius: 0.6, canShoot: true,
+        attackRange: 27, preferredRange: 14,
+        burstCount: 5, burstCooldownMin: 0.9, burstCooldownMax: 1.5,
+        score: 600, meshScale: 2.5,
+      },
+    },
+  },
+
+  pickups: {
+    healthAmount: 35,
+    boostDuration: 10,        // double-damage seconds
+    dropHealth: 0.16,         // per-kill drop chance
+    dropBoost: 0.08,
+    ttl: 14,                  // seconds before a drop despawns
+    grabRadius: 1.5,
   },
 
   arena: {
@@ -99,14 +121,16 @@ export const CONFIG = {
   waves: {
     intermission: 4.0,        // seconds between waves
     spawnStagger: 0.9,        // delay between spawns within a wave
+    bossEvery: 5,             // every Nth wave is a boss wave
     count: (n) => 2 + 2 * n,            // total enemies in wave n
     maxAlive: (n) => Math.min(2 + n, 7),
     healthScale: (n) => Math.min(1 + 0.07 * (n - 1), 1.8),
     speedScale: (n) => Math.min(1 + 0.04 * (n - 1), 1.35),
+    rusherShare: (n) => (n >= 2 ? 0.3 : 0), // fraction of a normal wave that spawns as rushers
+    bossHealthScale: (b) => 1 + 0.4 * (b - 1), // b = 1st, 2nd... boss
   },
 
   score: {
-    killPoints: 100,
     critBonus: 25,
     maxMultiplier: 8,
     comboWindow: 6.0,         // seconds to keep the chain alive

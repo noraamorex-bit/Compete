@@ -25,6 +25,22 @@ export class HUD {
     this.hitmarker = $('hitmarker');
     this.dmgVignette = $('damage-vignette');
     this.healVignette = $('heal-vignette');
+    this.bossWrap = $('boss-bar-wrap');
+    this.bossFill = $('boss-bar-fill');
+    this.boostChip = $('boost-chip');
+    this.boostSecs = $('boost-secs');
+
+    // Directional damage indicator pool.
+    this.indicators = [];
+    const indWrap = $('hit-indicators');
+    for (let i = 0; i < 4; i++) {
+      const el = document.createElement('div');
+      el.className = 'hit-ind';
+      el.style.opacity = '0';
+      indWrap.appendChild(el);
+      this.indicators.push({ el, angle: 0, life: 0 });
+    }
+    this._indCursor = 0;
 
     this._lastHealth = -1;
     this._lastScore = -1;
@@ -102,6 +118,11 @@ export class HUD {
     hm.classList.add('show');
   }
 
+  healFlash() {
+    this.healVignette.style.opacity = '1';
+    setTimeout(() => { this.healVignette.style.opacity = '0'; }, 220);
+  }
+
   damageFlash() {
     this.dmgVignette.style.transition = 'none';
     this.dmgVignette.style.opacity = '1';
@@ -123,6 +144,39 @@ export class HUD {
     this.crosshair.classList.toggle('ads', blend > 0.6);
   }
 
+  // frac null hides the bar.
+  setBossBar(frac) {
+    this.bossWrap.classList.toggle('hidden', frac == null);
+    if (frac != null) this.bossFill.style.width = (clamp(frac, 0, 1) * 100) + '%';
+  }
+
+  // seconds <= 0 hides the chip.
+  setBoost(seconds) {
+    this.boostChip.classList.toggle('hidden', seconds <= 0);
+    if (seconds > 0) this.boostSecs.textContent = Math.ceil(seconds) + 's';
+  }
+
+  // faceAngle: the player yaw that would face the source,
+  // i.e. atan2(playerX - sourceX, playerZ - sourceZ).
+  showDamageFrom(faceAngle) {
+    const ind = this.indicators[this._indCursor];
+    this._indCursor = (this._indCursor + 1) % this.indicators.length;
+    ind.angle = faceAngle;
+    ind.life = 1.1;
+  }
+
+  // Called each frame so indicators stay world-anchored as the player turns.
+  updateIndicators(dt, playerYaw) {
+    for (const ind of this.indicators) {
+      if (ind.life <= 0) continue;
+      ind.life -= dt;
+      if (ind.life <= 0) { ind.el.style.opacity = '0'; continue; }
+      const rot = playerYaw - ind.angle; // 0 = source dead ahead (arc on top)
+      ind.el.style.transform = `rotate(${rot.toFixed(3)}rad)`;
+      ind.el.style.opacity = Math.min(1, ind.life / 0.4).toFixed(2);
+    }
+  }
+
   setCrosshairSpread(spreadRad, moving) {
     // Convert weapon spread to a pixel gap, roughly.
     const px = clamp(6 + spreadRad * 900 + (moving ? 4 : 0), 6, 30);
@@ -137,7 +191,11 @@ export class HUD {
     this.setScore(0, false);
     this.setWave(1);
     this.setCombo(1, 0);
+    this.setBossBar(null);
+    this.setBoost(0);
     this.waveBanner.classList.add('hidden');
     this.dmgVignette.style.opacity = '0';
+    this.healVignette.style.opacity = '0';
+    for (const ind of this.indicators) { ind.life = 0; ind.el.style.opacity = '0'; }
   }
 }

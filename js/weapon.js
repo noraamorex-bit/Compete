@@ -57,6 +57,7 @@ export class Weapon {
     this.cooldown = 0;
     this.bloom = 0;             // accumulated spread from firing
     this.adsBlend = 0;          // 0 = hip, 1 = aimed
+    this.damageMult = 1;        // pickup boost sets this to 2
 
     this.onAmmoChanged = null;  // cb(ammo)
     this.onHit = null;          // cb('hit'|'crit'|'kill')
@@ -232,7 +233,7 @@ export class Weapon {
       if (enemyHit) {
         let rec = hits.get(enemyHit.enemy);
         if (!rec) { rec = { total: 0, crit: false, point: hitPoint.clone() }; hits.set(enemyHit.enemy, rec); }
-        rec.total += S.damage * (enemyHit.crit ? S.critMultiplier : 1);
+        rec.total += S.damage * this.damageMult * (enemyHit.crit ? S.critMultiplier : 1);
         rec.crit = rec.crit || enemyHit.crit;
         this.effects.burst(hitPoint, enemyHit.crit ? 0xff8a3d : 0xffd166, 4, 3.5, 4, 0.3);
       } else if (worldHit) {

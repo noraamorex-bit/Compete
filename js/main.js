@@ -6,6 +6,7 @@ import { buildWorld } from './world.js';
 import { Player } from './player.js';
 import { Weapon } from './weapon.js';
 import { EnemyManager } from './enemy.js';
+import { Pickups } from './pickups.js';
 import { Effects } from './effects.js';
 import { HUD } from './hud.js';
 import { input, isTouchDevice } from './input.js';
@@ -46,6 +47,7 @@ const effects = new Effects(scene);
 const player = new Player(camera, world.colliders);
 const weapon = new Weapon(camera, effects, world.colliders, weaponStats(selectedWeaponId));
 const enemies = new EnemyManager(scene, effects, world.colliders, world.enemySpawns);
+const pickups = new Pickups(scene, effects, world.colliders);
 const hud = new HUD();
 
 // ---------- Game state ----------
@@ -58,6 +60,7 @@ let comboT = 0;
 let wave = 1;
 let waveState = 'active';        // 'active' | 'intermission'
 let intermissionT = 0;
+let boostT = 0;                  // double-damage seconds remaining
 let runTime = 0;
 let bestScore = Number(localStorage.getItem('voltage.bestScore') || 0);
 let bestWave = Number(localStorage.getItem('voltage.bestWave') || 0);
@@ -86,12 +89,23 @@ function applyGraphics() {
 
 function waveConfig(n) {
   const W = CONFIG.waves;
-  return {
-    count: W.count(n),
-    maxAlive: W.maxAlive(n),
-    healthScale: W.healthScale(n),
-    speedScale: W.speedScale(n),
-  };
+  const base = { healthScale: W.healthScale(n), speedScale: W.speedScale(n) };
+
+  if (n % W.bossEvery === 0) {
+    const bossNum = n / W.bossEvery;
+    const escorts = Math.min(2 + bossNum, 5);
+    const types = ['boss'];
+    for (let i = 0; i < escorts; i++) types.push(i % 2 === 0 ? 'drone' : 'rusher');
+    return { ...base, types, maxAlive: 5, bossHealthScale: W.bossHealthScale(bossNum), isBoss: true };
+  }
+
+  const total = W.count(n);
+  const rushers = Math.round(total * W.rusherShare(n));
+  const types = [];
+  for (let i = 0; i < total; i++) types.push(i < rushers ? 'rusher' : 'drone');
+  // Interleave so rushers arrive spread through the wave.
+  types.sort(() => Math.random() - 0.5);
+  return { ...base, types, maxAlive: W.maxAlive(n), isBoss: false };
 }
 
 // ---------- Menus / UI wiring ----------
@@ -178,13 +192,16 @@ function startRun() {
   score = 0;
   multiplier = 1;
   comboT = 0;
+  boostT = 0;
   wave = 1;
   waveState = 'active';
   runTime = 0;
   player.respawn(world.playerSpawn);
   weapon.reset();
+  weapon.damageMult = 1;
   enemies.clearAll();
   enemies.beginWave(waveConfig(1), player.position);
+  pickups.clear();
   effects.clear();
   hud.reset();
   hud.setAmmo(weapon.ammo, false);
@@ -214,7 +231,8 @@ function goToMenu() {
   player.respawn(world.playerSpawn);
   player.alive = false; // menu-backdrop drones ignore a dead player
   enemies.clearAll();
-  enemies.beginWave({ count: 5, maxAlive: 5 }, new THREE.Vector3(0, 0, 0));
+  enemies.beginWave({ types: Array(5).fill('drone'), maxAlive: 5 }, new THREE.Vector3(0, 0, 0));
+  pickups.clear();
   effects.clear();
   refreshWeaponMenu();
   refreshBestLine();
@@ -308,15 +326,46 @@ weapon.onHit = (kind) => hud.hitmark(kind);
 player.onDamaged = () => hud.damageFlash();
 player.onDied = () => die();
 
-enemies.onKill = (pos, crit) => {
+enemies.onKill = (pos, crit, type) => {
   kills++;
-  score += (CONFIG.score.killPoints + (crit ? CONFIG.score.critBonus : 0)) * multiplier;
+  const base = CONFIG.enemy.types[type]?.score ?? 100;
+  score += (base + (crit ? CONFIG.score.critBonus : 0)) * multiplier;
   multiplier = Math.min(multiplier + 1, CONFIG.score.maxMultiplier);
   comboT = CONFIG.score.comboWindow;
   hud.setKills(kills);
   hud.setScore(score);
-  player.addTrauma(0.12);
+  player.addTrauma(type === 'boss' ? 0.3 : 0.12);
   trackKillProgress();
+
+  // Drops: bosses always pay out, others roll the dice.
+  if (state === State.PLAYING) {
+    if (type === 'boss') {
+      pickups.spawn(pos, 'health');
+      pickups.spawn(new THREE.Vector3(pos.x + 1.2, pos.y, pos.z + 1.2), 'boost');
+    } else {
+      const roll = Math.random();
+      if (roll < CONFIG.pickups.dropBoost) pickups.spawn(pos, 'boost');
+      else if (roll < CONFIG.pickups.dropBoost + CONFIG.pickups.dropHealth) pickups.spawn(pos, 'health');
+    }
+  }
+};
+
+enemies.onPlayerDamaged = (amount, srcPos) => {
+  hud.showDamageFrom(Math.atan2(
+    player.position.x - srcPos.x,
+    player.position.z - srcPos.z
+  ));
+};
+
+pickups.onPickup = (type) => {
+  if (type === 'health') {
+    player.health = Math.min(CONFIG.player.maxHealth, player.health + CONFIG.pickups.healthAmount);
+    hud.healFlash();
+    audio.pickupHealth();
+  } else {
+    boostT = CONFIG.pickups.boostDuration;
+    audio.pickupBoost();
+  }
 };
 
 enemies.onWaveCleared = () => {
@@ -353,6 +402,11 @@ function frame(now) {
     player.update(dt, input, weapon.adsBlend);
     weapon.update(dt, input, player, enemies, look.x, look.y);
     enemies.update(dt, player);
+    pickups.update(dt, player);
+
+    // Damage boost timer
+    if (boostT > 0) boostT = Math.max(0, boostT - dt);
+    weapon.damageMult = boostT > 0 ? 2 : 1;
 
     // FOV: sprint widens, ADS narrows toward the weapon's zoom.
     const targetFov = (BASE_FOV + CONFIG.player.sprintFovKick * player.sprintBlend)
@@ -375,9 +429,14 @@ function frame(now) {
         waveState = 'active';
         wave++;
         hud.setWave(wave);
-        hud.waveBannerShow(`WAVE ${wave}`, `${CONFIG.waves.count(wave)} DRONES`);
+        const cfg = waveConfig(wave);
+        if (cfg.isBoss) {
+          hud.waveBannerShow(`WAVE ${wave}`, 'BOSS INBOUND — SENTINEL PRIME');
+        } else {
+          hud.waveBannerShow(`WAVE ${wave}`, `${cfg.types.length} HOSTILES`);
+        }
         audio.waveStart();
-        enemies.beginWave(waveConfig(wave), player.position);
+        enemies.beginWave(cfg, player.position);
       }
     }
 
@@ -388,6 +447,10 @@ function frame(now) {
     hud.setCrosshairSpread(weapon.currentSpread, player.speed2D > 1);
     hud.setCombo(multiplier, comboT / CONFIG.score.comboWindow);
     hud.setADS(weapon.adsBlend);
+    hud.setBoost(boostT);
+    hud.updateIndicators(dt, player.yaw);
+    const boss = enemies.activeBoss;
+    hud.setBossBar(boss ? boss.health / boss.maxHealth : null);
   } else if (state === State.MENU || state === State.DEAD) {
     if (camera.fov !== BASE_FOV) {
       camera.fov = BASE_FOV;
@@ -406,13 +469,15 @@ function frame(now) {
 
 // Debug/test hook (harmless in production).
 window.__game = {
-  player, enemies, weapon, input, settings,
+  player, enemies, weapon, input, settings, pickups,
   get state() { return state; },
   get score() { return score; },
   get multiplier() { return multiplier; },
   get wave() { return wave; },
   get waveState() { return waveState; },
   get totalKills() { return totalKills; },
+  get boostT() { return boostT; },
+  set wave(n) { wave = n; },
 };
 
 applyGraphics();
@@ -420,7 +485,7 @@ applyGraphics();
 // Menu backdrop: a few idle drones wandering the arena.
 player.respawn(world.playerSpawn);
 player.alive = false; // drones ignore a dead player in menu state
-enemies.beginWave({ count: 5, maxAlive: 5 }, new THREE.Vector3(0, 0, 0));
+enemies.beginWave({ types: Array(5).fill('drone'), maxAlive: 5 }, new THREE.Vector3(0, 0, 0));
 setState(State.MENU);
 requestAnimationFrame(frame);
 

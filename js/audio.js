@@ -169,6 +169,25 @@ class AudioEngine {
     this._tone(660, 0.06, { type: 'sine', gain: 0.15, endFreq: 880 });
   }
 
+  bossSpawn() {
+    if (!this._ok()) return;
+    this._tone(80, 0.9, { type: 'sawtooth', gain: 0.3, endFreq: 45 });
+    this._noise(0.7, { type: 'lowpass', freq: 300, gain: 0.3, decay: 0.7 });
+    setTimeout(() => this._ok() && this._tone(160, 0.4, { type: 'square', gain: 0.12, endFreq: 70 }), 250);
+  }
+
+  pickupHealth() {
+    if (!this._ok()) return;
+    this._tone(523, 0.09, { type: 'sine', gain: 0.2 });
+    setTimeout(() => this._ok() && this._tone(784, 0.14, { type: 'sine', gain: 0.2 }), 80);
+  }
+
+  pickupBoost() {
+    if (!this._ok()) return;
+    this._tone(440, 0.1, { type: 'sawtooth', gain: 0.14, endFreq: 880 });
+    setTimeout(() => this._ok() && this._tone(880, 0.18, { type: 'sawtooth', gain: 0.12, endFreq: 1320 }), 90);
+  }
+
   waveStart() {
     if (!this._ok()) return;
     this._tone(392, 0.14, { type: 'triangle', gain: 0.2 });
