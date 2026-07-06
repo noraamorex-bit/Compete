@@ -8,6 +8,7 @@ import { audio } from './audio.js';
 
 const E = CONFIG.enemy;
 const MAX_PROJECTILES = 40;
+const POOL_SIZE = 8; // >= max simultaneous alive + dying
 
 const STATE = { SPAWNING: 0, WANDER: 1, CHASE: 2, DYING: 3 };
 
@@ -71,10 +72,10 @@ class Enemy {
     this.mesh.visible = false;
   }
 
-  spawn(pos) {
+  spawn(pos, healthScale = 1) {
     this.position.set(pos.x, pos.y + E.hoverHeight, pos.z);
     this.velocity.set(0, 0, 0);
-    this.health = E.health;
+    this.health = E.health * healthScale;
     this.state = STATE.SPAWNING;
     this.stateT = 0;
     this.losT = 99;
@@ -94,10 +95,18 @@ export class EnemyManager {
     this.spawnPoints = enemySpawns;
 
     this.enemies = [];
-    for (let i = 0; i < E.maxAlive; i++) this.enemies.push(new Enemy(scene));
-    this.respawnTimers = [];
+    for (let i = 0; i < POOL_SIZE; i++) this.enemies.push(new Enemy(scene));
 
-    this.onKill = null;          // cb(position)
+    // Wave spawning state — driven by beginWave().
+    this.pendingSpawns = 0;
+    this.maxAlive = E.maxAlive;
+    this.healthScale = 1;
+    this.speedScale = 1;
+    this.spawnTimer = 0;
+    this.waveActive = false;
+
+    this.onKill = null;          // cb(position, crit)
+    this.onWaveCleared = null;
     this.onPlayerDamaged = null; // cb(amount)
 
     // ---- Projectile pool ----
@@ -126,12 +135,37 @@ export class EnemyManager {
     this._flat = new THREE.Vector3();
   }
 
-  reset(playerPos) {
-    this.respawnTimers.length = 0;
+  clearAll() {
+    this.pendingSpawns = 0;
+    this.waveActive = false;
     for (const e of this.enemies) {
-      e.spawn(this._pickSpawn(playerPos));
+      e.active = false;
+      e.mesh.visible = false;
     }
     for (const p of this.projectiles) { p.life = 0; p.mesh.visible = false; }
+  }
+
+  // Queue a wave: `count` enemies total, spawned staggered up to `maxAlive` at once.
+  beginWave({ count, maxAlive, healthScale = 1, speedScale = 1 }, playerPos) {
+    this.pendingSpawns = count;
+    this.maxAlive = maxAlive;
+    this.healthScale = healthScale;
+    this.speedScale = speedScale;
+    this.spawnTimer = 0;
+    this.waveActive = true;
+    // First few spawn immediately so the wave starts with presence.
+    const initial = Math.min(maxAlive, count, 3);
+    for (let i = 0; i < initial; i++) this._spawnOne(playerPos, false);
+  }
+
+  _spawnOne(playerPos, ringFx = true) {
+    if (this.pendingSpawns <= 0) return;
+    const e = this.enemies.find((en) => !en.active);
+    if (!e) return;
+    this.pendingSpawns--;
+    const sp = this._pickSpawn(playerPos);
+    e.spawn(sp, this.healthScale);
+    if (ringFx) this.effects.ring(new THREE.Vector3(sp.x, sp.y + 0.2, sp.z));
   }
 
   aliveCount() {
@@ -198,7 +232,7 @@ export class EnemyManager {
       enemy.stateT = 0;
       enemy.velocity.set(rand(-1.5, 1.5), 2.2, rand(-1.5, 1.5));
       audio.kill();
-      this.onKill?.(enemy.position.clone());
+      this.onKill?.(enemy.position.clone(), crit);
       return 'killed';
     }
     return 'damaged';
@@ -224,17 +258,12 @@ export class EnemyManager {
   update(dt, player) {
     const playerEye = player.eyePosition;
 
-    // ---- Respawn queue ----
-    for (let i = this.respawnTimers.length - 1; i >= 0; i--) {
-      this.respawnTimers[i] -= dt;
-      if (this.respawnTimers[i] <= 0) {
-        this.respawnTimers.splice(i, 1);
-        const e = this.enemies.find((en) => !en.active);
-        if (e) {
-          const sp = this._pickSpawn(player.position);
-          e.spawn(sp);
-          this.effects.ring(new THREE.Vector3(sp.x, sp.y + 0.2, sp.z));
-        }
+    // ---- Staggered wave spawning ----
+    if (this.pendingSpawns > 0 && this.aliveCount() < this.maxAlive) {
+      this.spawnTimer -= dt;
+      if (this.spawnTimer <= 0) {
+        this._spawnOne(player.position);
+        this.spawnTimer = CONFIG.waves.spawnStagger;
       }
     }
 
@@ -271,7 +300,7 @@ export class EnemyManager {
       if (seesPlayer) e.losT = 0; else e.losT += dt;
 
       // ---- Steering ----
-      let speed = E.wanderSpeed;
+      let speed = E.wanderSpeed * this.speedScale;
       let moveDir = this._v2.set(0, 0, 0);
 
       if (e.state === STATE.WANDER) {
@@ -286,7 +315,7 @@ export class EnemyManager {
         if (moveDir.lengthSq() > 1) moveDir.normalize();
         if (seesPlayer) { e.state = STATE.CHASE; e.strafeDir = Math.random() < 0.5 ? -1 : 1; }
       } else if (e.state === STATE.CHASE) {
-        speed = E.chaseSpeed;
+        speed = E.chaseSpeed * this.speedScale;
         const flat = this._flat.set(toPlayer.x, 0, toPlayer.z);
         const d = flat.length();
         if (d > 0.01) flat.divideScalar(d);
@@ -380,7 +409,11 @@ export class EnemyManager {
       this.effects.explosion(e.position.clone());
       e.active = false;
       e.mesh.visible = false;
-      this.respawnTimers.push(E.respawnDelay);
+      // Last enemy down and nothing left to spawn → wave cleared.
+      if (this.waveActive && this.pendingSpawns <= 0 && this.enemies.every((en) => !en.active)) {
+        this.waveActive = false;
+        this.onWaveCleared?.();
+      }
     }
   }
 

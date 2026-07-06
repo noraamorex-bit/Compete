@@ -47,7 +47,6 @@ export const CONFIG = {
     burstCooldownMax: 2.0,
     projectileSpeed: 24,
     projectileDamage: 11,
-    respawnDelay: 3.5,
     bodyRadius: 0.72,
     coreRadius: 0.3,
   },
@@ -55,5 +54,21 @@ export const CONFIG = {
   arena: {
     size: 62,                 // outer square, wall to wall
     wallHeight: 5,
+  },
+
+  waves: {
+    intermission: 4.0,        // seconds between waves
+    spawnStagger: 0.9,        // delay between spawns within a wave
+    count: (n) => 2 + 2 * n,            // total enemies in wave n
+    maxAlive: (n) => Math.min(2 + n, 7),
+    healthScale: (n) => Math.min(1 + 0.07 * (n - 1), 1.8),
+    speedScale: (n) => Math.min(1 + 0.04 * (n - 1), 1.35),
+  },
+
+  score: {
+    killPoints: 100,
+    critBonus: 25,
+    maxMultiplier: 8,
+    comboWindow: 6.0,         // seconds to keep the chain alive
   },
 };

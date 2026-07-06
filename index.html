@@ -48,8 +48,22 @@
       </div>
 
       <div id="hud-tl">
-        <div id="kills-wrap"><span class="kills-label">KILLS</span><span id="kills-num">0</span></div>
-        <div id="streak-wrap" class="hidden"><span id="streak-num"></span></div>
+        <div id="score-panel">
+          <div id="score-num">0</div>
+          <div id="score-row">
+            <span id="wave-chip">WAVE 1</span>
+            <span class="kills-label">KILLS</span><span id="kills-num">0</span>
+          </div>
+          <div id="combo-row" class="hidden">
+            <span id="combo-chip">×2</span>
+            <div id="combo-bar"><i id="combo-fill"></i></div>
+          </div>
+        </div>
+      </div>
+
+      <div id="wave-banner" class="hidden">
+        <div id="wave-banner-title"></div>
+        <div id="wave-banner-sub"></div>
       </div>
 
       <button id="btn-pause-hud" class="icon-btn" aria-label="Pause">❚❚</button>
@@ -86,7 +100,7 @@
         <div class="controls-hint" id="hint-mobile">
           <div><b>LEFT</b> Move</div><div><b>RIGHT</b> Aim</div><div><b>◉</b> Fire</div>
         </div>
-        <p class="best-line hidden" id="best-line">BEST <b id="best-num">0</b> KILLS</p>
+        <p class="best-line hidden" id="best-line">BEST <b id="best-num">0</b> PTS · WAVE <b id="best-wave">1</b></p>
       </div>
     </div>
 
@@ -95,7 +109,14 @@
         <h2 class="menu-title">PAUSED</h2>
         <button id="btn-resume" class="btn btn-primary">RESUME</button>
         <button id="btn-restart" class="btn">RESTART</button>
-        <button id="btn-sound" class="btn">SOUND: ON</button>
+        <div class="settings-block">
+          <div class="setting-row">
+            <label for="sens-slider">SENSITIVITY <span id="sens-val">1.0</span></label>
+            <input type="range" id="sens-slider" min="40" max="220" step="5" value="100">
+          </div>
+          <button id="btn-gfx" class="btn">GRAPHICS: HIGH</button>
+          <button id="btn-sound" class="btn">SOUND: ON</button>
+        </div>
       </div>
     </div>
 
@@ -103,8 +124,9 @@
       <div class="menu-panel">
         <h2 class="menu-title death-title">SYSTEMS FAILED</h2>
         <div class="death-stats">
+          <div class="stat"><span id="death-score">0</span><label>SCORE</label></div>
+          <div class="stat"><span id="death-wave">1</span><label>WAVE</label></div>
           <div class="stat"><span id="death-kills">0</span><label>KILLS</label></div>
-          <div class="stat"><span id="death-time">0:00</span><label>SURVIVED</label></div>
           <div class="stat"><span id="death-best">0</span><label>BEST</label></div>
         </div>
         <button id="btn-respawn" class="btn btn-primary">REDEPLOY</button>

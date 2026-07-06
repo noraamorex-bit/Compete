@@ -169,6 +169,19 @@ class AudioEngine {
     this._tone(660, 0.06, { type: 'sine', gain: 0.15, endFreq: 880 });
   }
 
+  waveStart() {
+    if (!this._ok()) return;
+    this._tone(392, 0.14, { type: 'triangle', gain: 0.2 });
+    setTimeout(() => this._ok() && this._tone(587, 0.2, { type: 'triangle', gain: 0.22 }), 130);
+  }
+
+  waveClear() {
+    if (!this._ok()) return;
+    this._tone(523, 0.12, { type: 'triangle', gain: 0.2 });
+    setTimeout(() => this._ok() && this._tone(659, 0.12, { type: 'triangle', gain: 0.2 }), 110);
+    setTimeout(() => this._ok() && this._tone(784, 0.25, { type: 'triangle', gain: 0.22 }), 220);
+  }
+
   projectileImpact() {
     if (!this._ok()) return;
     this._noise(0.07, { freq: 2000, q: 2, gain: 0.14 });

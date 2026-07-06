@@ -12,8 +12,14 @@ export class HUD {
     this.healthNum = $('health-num');
     this.ammoMag = $('ammo-mag');
     this.killsNum = $('kills-num');
-    this.streakWrap = $('streak-wrap');
-    this.streakNum = $('streak-num');
+    this.scoreNum = $('score-num');
+    this.waveChip = $('wave-chip');
+    this.comboRow = $('combo-row');
+    this.comboChip = $('combo-chip');
+    this.comboFill = $('combo-fill');
+    this.waveBanner = $('wave-banner');
+    this.waveBannerTitle = $('wave-banner-title');
+    this.waveBannerSub = $('wave-banner-sub');
     this.reloadHint = $('reload-hint');
     this.crosshair = $('crosshair');
     this.hitmarker = $('hitmarker');
@@ -21,9 +27,9 @@ export class HUD {
     this.healVignette = $('heal-vignette');
 
     this._lastHealth = -1;
-    this._hmTimer = null;
+    this._lastScore = -1;
     this._dmgTimer = null;
-    this._streakTimer = null;
+    this._bannerTimer = null;
   }
 
   show() { this.root.classList.remove('hidden'); }
@@ -46,22 +52,45 @@ export class HUD {
     this.reloadHint.classList.toggle('hidden', !showHint);
   }
 
-  setKills(kills, bump = true) {
+  setKills(kills) {
     this.killsNum.textContent = kills;
+  }
+
+  setScore(score, bump = true) {
+    const s = Math.round(score);
+    if (s === this._lastScore) return;
+    this._lastScore = s;
+    this.scoreNum.textContent = s.toLocaleString('en-US');
     if (bump) {
-      this.killsNum.classList.remove('bump');
-      void this.killsNum.offsetWidth; // restart animation
-      this.killsNum.classList.add('bump');
+      this.scoreNum.classList.remove('bump');
+      void this.scoreNum.offsetWidth; // restart animation
+      this.scoreNum.classList.add('bump');
     }
   }
 
-  showStreak(streak) {
-    if (streak < 2) return;
-    const names = { 2: 'DOUBLE KILL', 3: 'TRIPLE KILL', 4: 'RAMPAGE', 5: 'UNSTOPPABLE' };
-    this.streakNum.textContent = names[Math.min(streak, 5)] + (streak > 5 ? ` ×${streak}` : '');
-    this.streakWrap.classList.remove('hidden');
-    clearTimeout(this._streakTimer);
-    this._streakTimer = setTimeout(() => this.streakWrap.classList.add('hidden'), 1800);
+  setWave(n) {
+    this.waveChip.textContent = 'WAVE ' + n;
+  }
+
+  // multiplier 1 hides the row; frac is the remaining combo window 0..1.
+  setCombo(multiplier, frac) {
+    if (multiplier <= 1) {
+      this.comboRow.classList.add('hidden');
+      return;
+    }
+    this.comboRow.classList.remove('hidden');
+    this.comboChip.textContent = '×' + multiplier;
+    this.comboFill.style.width = (clamp(frac, 0, 1) * 100) + '%';
+  }
+
+  waveBannerShow(title, sub = '') {
+    this.waveBannerTitle.textContent = title;
+    this.waveBannerSub.textContent = sub;
+    this.waveBanner.classList.remove('hidden', 'show');
+    void this.waveBanner.offsetWidth;
+    this.waveBanner.classList.add('show');
+    clearTimeout(this._bannerTimer);
+    this._bannerTimer = setTimeout(() => this.waveBanner.classList.add('hidden'), 2300);
   }
 
   // kind: 'hit' | 'crit' | 'kill'
@@ -98,9 +127,13 @@ export class HUD {
 
   reset() {
     this._lastHealth = -1;
+    this._lastScore = -1;
     this.setHealth(CONFIG.player.maxHealth);
-    this.setKills(0, false);
-    this.streakWrap.classList.add('hidden');
+    this.setKills(0);
+    this.setScore(0, false);
+    this.setWave(1);
+    this.setCombo(1, 0);
+    this.waveBanner.classList.add('hidden');
     this.dmgVignette.style.opacity = '0';
   }
 }

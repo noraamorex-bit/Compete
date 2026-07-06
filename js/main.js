@@ -44,12 +44,46 @@ const hud = new HUD();
 const State = { MENU: 'menu', PLAYING: 'playing', PAUSED: 'paused', DEAD: 'dead' };
 let state = State.MENU;
 let kills = 0;
-let streak = 0;
-let streakT = 0;
+let score = 0;
+let multiplier = 1;
+let comboT = 0;
+let wave = 1;
+let waveState = 'active';        // 'active' | 'intermission'
+let intermissionT = 0;
 let runTime = 0;
-let best = Number(localStorage.getItem('voltage.best') || 0);
+let bestScore = Number(localStorage.getItem('voltage.bestScore') || 0);
+let bestWave = Number(localStorage.getItem('voltage.bestWave') || 0);
 
 const LOOK_SENS = 0.0027;
+
+// ---------- Settings ----------
+const settings = {
+  sens: Number(localStorage.getItem('voltage.sens') || 1),
+  gfx: localStorage.getItem('voltage.gfx') || 'high',
+};
+
+function applyGraphics() {
+  const high = settings.gfx === 'high';
+  renderer.setPixelRatio(high ? Math.min(devicePixelRatio, isTouchDevice ? 1.75 : 2) : 1);
+  renderer.setSize(innerWidth, innerHeight);
+  renderer.shadowMap.enabled = high;
+  world.sun.castShadow = high;
+  scene.traverse((o) => {
+    if (!o.isMesh) return;
+    const mats = Array.isArray(o.material) ? o.material : [o.material];
+    for (const m of mats) m.needsUpdate = true;
+  });
+}
+
+function waveConfig(n) {
+  const W = CONFIG.waves;
+  return {
+    count: W.count(n),
+    maxAlive: W.maxAlive(n),
+    healthScale: W.healthScale(n),
+    speedScale: W.speedScale(n),
+  };
+}
 
 // ---------- Menus / UI wiring ----------
 const menuStart = $('menu-start');
@@ -61,10 +95,14 @@ const btnSound = $('btn-sound');
 $('hint-desktop').classList.toggle('hidden', isTouchDevice);
 $('hint-mobile').classList.toggle('hidden', !isTouchDevice);
 document.body.classList.toggle('touch', isTouchDevice);
-if (best > 0) {
+
+function refreshBestLine() {
+  if (bestScore <= 0) return;
   $('best-line').classList.remove('hidden');
-  $('best-num').textContent = best;
+  $('best-num').textContent = bestScore.toLocaleString('en-US');
+  $('best-wave').textContent = bestWave;
 }
+refreshBestLine();
 
 function setState(next) {
   state = next;
@@ -87,15 +125,22 @@ function goFullscreen() {
 function startRun() {
   goFullscreen();
   kills = 0;
-  streak = 0;
+  score = 0;
+  multiplier = 1;
+  comboT = 0;
+  wave = 1;
+  waveState = 'active';
   runTime = 0;
   player.respawn(world.playerSpawn);
   weapon.reset();
-  enemies.reset(player.position);
+  enemies.clearAll();
+  enemies.beginWave(waveConfig(1), player.position);
   effects.clear();
   hud.reset();
   hud.setAmmo(weapon.ammo, false);
   setState(State.PLAYING);
+  hud.waveBannerShow('WAVE 1', 'ELIMINATE ALL DRONES');
+  audio.waveStart();
   if (!isTouchDevice) input.requestLock(document.body);
 }
 
@@ -114,15 +159,19 @@ function pause() {
 
 function die() {
   input.releaseLock();
-  if (kills > best) {
-    best = kills;
-    localStorage.setItem('voltage.best', String(best));
+  if (score > bestScore) {
+    bestScore = score;
+    localStorage.setItem('voltage.bestScore', String(bestScore));
   }
+  if (wave > bestWave) {
+    bestWave = wave;
+    localStorage.setItem('voltage.bestWave', String(bestWave));
+  }
+  refreshBestLine();
+  $('death-score').textContent = score.toLocaleString('en-US');
+  $('death-wave').textContent = wave;
   $('death-kills').textContent = kills;
-  $('death-best').textContent = best;
-  const m = Math.floor(runTime / 60);
-  const s = Math.floor(runTime % 60).toString().padStart(2, '0');
-  $('death-time').textContent = `${m}:${s}`;
+  $('death-best').textContent = bestScore.toLocaleString('en-US');
   // Short delay so the death moment reads before the menu appears.
   setTimeout(() => { if (state === State.PLAYING) setState(State.DEAD); }, 900);
 }
@@ -140,6 +189,31 @@ btnSound.addEventListener('click', () => {
   btnSound.textContent = `SOUND: ${audio.enabled ? 'ON' : 'OFF'}`;
   audio.ui();
 });
+
+// Settings: sensitivity slider + graphics toggle.
+const sensSlider = $('sens-slider');
+const sensVal = $('sens-val');
+const btnGfx = $('btn-gfx');
+
+function refreshSettingsUI() {
+  sensSlider.value = String(Math.round(settings.sens * 100));
+  sensVal.textContent = settings.sens.toFixed(2).replace(/0$/, '');
+  btnGfx.textContent = `GRAPHICS: ${settings.gfx.toUpperCase()}`;
+}
+sensSlider.addEventListener('input', () => {
+  settings.sens = Number(sensSlider.value) / 100;
+  localStorage.setItem('voltage.sens', String(settings.sens));
+  sensVal.textContent = settings.sens.toFixed(2).replace(/0$/, '');
+});
+btnGfx.addEventListener('click', () => {
+  audio.init();
+  settings.gfx = settings.gfx === 'high' ? 'low' : 'high';
+  localStorage.setItem('voltage.gfx', settings.gfx);
+  applyGraphics();
+  refreshSettingsUI();
+  audio.ui();
+});
+refreshSettingsUI();
 
 // Esc → pause comes from pointer-lock release on desktop.
 input.onPause = () => { if (state === State.PLAYING && !isTouchDevice) pause(); };
@@ -168,13 +242,22 @@ weapon.onHit = (kind) => hud.hitmark(kind);
 player.onDamaged = () => hud.damageFlash();
 player.onDied = () => die();
 
-enemies.onKill = () => {
+enemies.onKill = (pos, crit) => {
   kills++;
-  streak++;
-  streakT = 4;
+  score += (CONFIG.score.killPoints + (crit ? CONFIG.score.critBonus : 0)) * multiplier;
+  multiplier = Math.min(multiplier + 1, CONFIG.score.maxMultiplier);
+  comboT = CONFIG.score.comboWindow;
   hud.setKills(kills);
-  hud.showStreak(streak);
+  hud.setScore(score);
   player.addTrauma(0.12);
+};
+
+enemies.onWaveCleared = () => {
+  if (state !== State.PLAYING || !player.alive) return;
+  waveState = 'intermission';
+  intermissionT = CONFIG.waves.intermission;
+  hud.waveBannerShow('WAVE CLEARED', `WAVE ${wave + 1} INCOMING`);
+  audio.waveClear();
 };
 
 // ---------- Resize ----------
@@ -197,16 +280,29 @@ function frame(now) {
 
     // Look
     const look = input.consumeLook();
-    player.look(look.x, look.y, LOOK_SENS * (isTouchDevice ? 1.2 : 1));
+    player.look(look.x, look.y, LOOK_SENS * settings.sens * (isTouchDevice ? 1.2 : 1));
 
     player.update(dt, input);
     weapon.update(dt, input, player, enemies, look.x, look.y);
     enemies.update(dt, player);
 
-    // Streak window decay
-    if (streakT > 0) {
-      streakT -= dt;
-      if (streakT <= 0) streak = 0;
+    // Combo window decay
+    if (comboT > 0) {
+      comboT -= dt;
+      if (comboT <= 0) multiplier = 1;
+    }
+
+    // Wave intermission → next wave
+    if (waveState === 'intermission') {
+      intermissionT -= dt;
+      if (intermissionT <= 0) {
+        waveState = 'active';
+        wave++;
+        hud.setWave(wave);
+        hud.waveBannerShow(`WAVE ${wave}`, `${CONFIG.waves.count(wave)} DRONES`);
+        audio.waveStart();
+        enemies.beginWave(waveConfig(wave), player.position);
+      }
     }
 
     // HUD
@@ -214,6 +310,7 @@ function frame(now) {
     hud.setLowHealthGlow(player.health);
     hud.setAmmo(weapon.ammo, weapon.reloading);
     hud.setCrosshairSpread(weapon.currentSpread, player.speed2D > 1);
+    hud.setCombo(multiplier, comboT / CONFIG.score.comboWindow);
   } else if (state === State.MENU || state === State.DEAD) {
     // Slow cinematic orbit behind the menus.
     const t = now * 0.00006;
@@ -227,12 +324,21 @@ function frame(now) {
 }
 
 // Debug/test hook (harmless in production).
-window.__game = { player, enemies, weapon, input, get state() { return state; } };
+window.__game = {
+  player, enemies, weapon, input, settings,
+  get state() { return state; },
+  get score() { return score; },
+  get multiplier() { return multiplier; },
+  get wave() { return wave; },
+  get waveState() { return waveState; },
+};
+
+applyGraphics();
 
 // Menu backdrop: a few idle drones wandering the arena.
 player.respawn(world.playerSpawn);
 player.alive = false; // drones ignore a dead player in menu state
-enemies.reset(new THREE.Vector3(0, 0, 0));
+enemies.beginWave({ count: 5, maxAlive: 5 }, new THREE.Vector3(0, 0, 0));
 setState(State.MENU);
 requestAnimationFrame(frame);
 

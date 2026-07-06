@@ -12,7 +12,9 @@ A complete, polished browser first-person shooter. One arena, one rifle, endless
 - Desktop **and** mobile: pointer-lock mouse aim + WASD, or virtual joystick + swipe look + touch buttons (auto-detected)
 - Minimal modern HUD: health, ammo, kills, streaks, dynamic crosshair
 - Procedural Web Audio sound effects — zero audio assets
-- Kill streaks, best-score persistence, pause / restart / death flow
+- Wave mode: escalating rounds with more, tougher, faster drones and intermissions
+- Score system with a kill-chain multiplier (up to ×8) and crit bonuses; best score/wave persistence
+- Settings: sensitivity slider and a graphics quality toggle (pause menu)
 - Installable PWA with offline play (service worker + manifest + app icon)
 
 ## Controls

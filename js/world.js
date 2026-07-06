@@ -221,5 +221,5 @@ export function buildWorld(scene, { shadows = true } = {}) {
 
   const playerSpawn = new THREE.Vector3(0, CONFIG.player.height / 2 + 0.01, -22);
 
-  return { colliders, enemySpawns, playerSpawn };
+  return { colliders, enemySpawns, playerSpawn, sun };
 }

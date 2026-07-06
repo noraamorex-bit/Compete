@@ -136,6 +136,8 @@ class Input {
     }, { passive: false });
 
     const onMove = (e) => {
+      // Only claim the gesture when it belongs to us (keeps menu sliders usable).
+      if (!this._joyTouch && !this._lookTouch) return;
       e.preventDefault();
       for (const t of e.changedTouches) {
         if (this._joyTouch && t.identifier === this._joyTouch.id) {
