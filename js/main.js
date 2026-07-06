@@ -49,7 +49,7 @@ let streakT = 0;
 let runTime = 0;
 let best = Number(localStorage.getItem('voltage.best') || 0);
 
-const LOOK_SENS = 0.0023;
+const LOOK_SENS = 0.0027;
 
 // ---------- Menus / UI wiring ----------
 const menuStart = $('menu-start');
@@ -60,6 +60,7 @@ const btnSound = $('btn-sound');
 
 $('hint-desktop').classList.toggle('hidden', isTouchDevice);
 $('hint-mobile').classList.toggle('hidden', !isTouchDevice);
+document.body.classList.toggle('touch', isTouchDevice);
 if (best > 0) {
   $('best-line').classList.remove('hidden');
   $('best-num').textContent = best;
@@ -77,7 +78,14 @@ function setState(next) {
   if (!inGame) input.reset();
 }
 
+// Fullscreen makes phone play far better; ignore where unsupported (iOS Safari).
+function goFullscreen() {
+  if (!isTouchDevice || document.fullscreenElement) return;
+  document.documentElement.requestFullscreen?.({ navigationUI: 'hide' })?.catch(() => {});
+}
+
 function startRun() {
+  goFullscreen();
   kills = 0;
   streak = 0;
   runTime = 0;
@@ -92,6 +100,7 @@ function startRun() {
 }
 
 function resume() {
+  goFullscreen();
   setState(State.PLAYING);
   audio.resume();
   if (!isTouchDevice) input.requestLock(document.body);
@@ -188,7 +197,7 @@ function frame(now) {
 
     // Look
     const look = input.consumeLook();
-    player.look(look.x, look.y, LOOK_SENS * (isTouchDevice ? 0.55 : 1));
+    player.look(look.x, look.y, LOOK_SENS * (isTouchDevice ? 1.2 : 1));
 
     player.update(dt, input);
     weapon.update(dt, input, player, enemies, look.x, look.y);
@@ -226,3 +235,10 @@ player.alive = false; // drones ignore a dead player in menu state
 enemies.reset(new THREE.Vector3(0, 0, 0));
 setState(State.MENU);
 requestAnimationFrame(frame);
+
+// PWA: offline cache + install support.
+if ('serviceWorker' in navigator) {
+  window.addEventListener('load', () => {
+    navigator.serviceWorker.register('./sw.js').catch(() => {});
+  });
+}

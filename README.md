@@ -13,6 +13,7 @@ A complete, polished browser first-person shooter. One arena, one rifle, endless
 - Minimal modern HUD: health, ammo, kills, streaks, dynamic crosshair
 - Procedural Web Audio sound effects — zero audio assets
 - Kill streaks, best-score persistence, pause / restart / death flow
+- Installable PWA with offline play (service worker + manifest + app icon)
 
 ## Controls
 
