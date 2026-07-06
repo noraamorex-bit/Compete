@@ -1,0 +1,10 @@
+{
+  "name": "voltage-arena-fps",
+  "version": "1.0.0",
+  "description": "A polished browser FPS — one arena, one rifle, endless drones.",
+  "type": "module",
+  "private": true,
+  "scripts": {
+    "start": "python3 -m http.server 8000"
+  }
+}
