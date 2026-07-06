@@ -1,0 +1,111 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
+  <meta name="theme-color" content="#0c1017">
+  <title>VOLTAGE — Arena FPS</title>
+  <meta name="description" content="A fast, polished browser FPS. One arena, one rifle, endless drones.">
+  <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>⚡</text></svg>">
+  <link rel="stylesheet" href="css/style.css">
+  <script type="importmap">
+    { "imports": { "three": "./lib/three.module.min.js" } }
+  </script>
+</head>
+<body>
+  <div id="app">
+    <canvas id="game-canvas"></canvas>
+
+    <!-- ===== HUD ===== -->
+    <div id="hud" class="hidden">
+      <div id="crosshair">
+        <span class="ch-line ch-t"></span><span class="ch-line ch-b"></span>
+        <span class="ch-line ch-l"></span><span class="ch-line ch-r"></span>
+        <span class="ch-dot"></span>
+      </div>
+      <div id="hitmarker">
+        <span></span><span></span><span></span><span></span>
+      </div>
+
+      <div id="hud-bl">
+        <div id="health-wrap">
+          <div id="health-bar"><div id="health-fill"></div></div>
+          <div id="health-num">100</div>
+        </div>
+      </div>
+
+      <div id="hud-br">
+        <div id="ammo-wrap">
+          <span id="ammo-mag">30</span><span id="ammo-sep">/</span><span id="ammo-reserve">∞</span>
+        </div>
+        <div id="reload-hint" class="hidden">RELOAD [R]</div>
+      </div>
+
+      <div id="hud-tl">
+        <div id="kills-wrap"><span class="kills-label">KILLS</span><span id="kills-num">0</span></div>
+        <div id="streak-wrap" class="hidden"><span id="streak-num"></span></div>
+      </div>
+
+      <button id="btn-pause-hud" class="icon-btn" aria-label="Pause">❚❚</button>
+
+      <div id="damage-vignette"></div>
+      <div id="heal-vignette"></div>
+      <div id="dmg-numbers"></div>
+    </div>
+
+    <!-- ===== Mobile controls ===== -->
+    <div id="mobile-controls" class="hidden">
+      <div id="joystick-zone">
+        <div id="joystick-base" class="hidden"><div id="joystick-knob"></div></div>
+      </div>
+      <div id="look-zone"></div>
+      <div id="mc-buttons">
+        <button id="mc-fire" class="mc-btn mc-fire" aria-label="Fire"><svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="5" fill="currentColor"/><circle cx="12" cy="12" r="9.5" fill="none" stroke="currentColor" stroke-width="1.6"/></svg></button>
+        <button id="mc-jump" class="mc-btn" aria-label="Jump"><svg viewBox="0 0 24 24"><path d="M12 4l6 7h-4v9h-4v-9H6z" fill="currentColor"/></svg></button>
+        <button id="mc-reload" class="mc-btn" aria-label="Reload"><svg viewBox="0 0 24 24"><path d="M12 5a7 7 0 1 1-6.3 4H3.5L7 4.5 10.5 9H8a5 5 0 1 0 4-2z" fill="currentColor"/></svg></button>
+        <button id="mc-sprint" class="mc-btn" aria-label="Sprint"><svg viewBox="0 0 24 24"><path d="M13 3.5a1.8 1.8 0 1 1 0 3.6 1.8 1.8 0 0 1 0-3.6zM9 22l2.3-6.4-2-1.6L8 18H5.5l1.8-5.6c.3-1 .8-1.6 1.8-2l3.2-1.3c1-.4 2-.1 2.6.7l1.2 1.6c.7 1 1.7 1.5 3.4 1.6v2c-2.2 0-3.7-.6-4.8-1.9l-.7 2.4 2 2V22h-2.3v-3.6l-2-1.7L11.5 22z" fill="currentColor"/></svg></button>
+      </div>
+    </div>
+
+    <!-- ===== Menus ===== -->
+    <div id="menu-start" class="menu">
+      <div class="menu-panel">
+        <h1 class="game-title">VOLT<span>AGE</span></h1>
+        <p class="game-sub">ARENA COMBAT PROTOCOL</p>
+        <button id="btn-play" class="btn btn-primary">DEPLOY</button>
+        <div class="controls-hint" id="hint-desktop">
+          <div><b>WASD</b> Move</div><div><b>MOUSE</b> Aim</div><div><b>LMB</b> Fire</div>
+          <div><b>SPACE</b> Jump</div><div><b>SHIFT</b> Sprint</div><div><b>R</b> Reload</div>
+        </div>
+        <div class="controls-hint" id="hint-mobile">
+          <div><b>LEFT</b> Move</div><div><b>RIGHT</b> Aim</div><div><b>◉</b> Fire</div>
+        </div>
+        <p class="best-line hidden" id="best-line">BEST <b id="best-num">0</b> KILLS</p>
+      </div>
+    </div>
+
+    <div id="menu-pause" class="menu hidden">
+      <div class="menu-panel">
+        <h2 class="menu-title">PAUSED</h2>
+        <button id="btn-resume" class="btn btn-primary">RESUME</button>
+        <button id="btn-restart" class="btn">RESTART</button>
+        <button id="btn-sound" class="btn">SOUND: ON</button>
+      </div>
+    </div>
+
+    <div id="menu-death" class="menu hidden">
+      <div class="menu-panel">
+        <h2 class="menu-title death-title">SYSTEMS FAILED</h2>
+        <div class="death-stats">
+          <div class="stat"><span id="death-kills">0</span><label>KILLS</label></div>
+          <div class="stat"><span id="death-time">0:00</span><label>SURVIVED</label></div>
+          <div class="stat"><span id="death-best">0</span><label>BEST</label></div>
+        </div>
+        <button id="btn-respawn" class="btn btn-primary">REDEPLOY</button>
+      </div>
+    </div>
+  </div>
+
+  <script type="module" src="js/main.js"></script>
+</body>
+</html>
