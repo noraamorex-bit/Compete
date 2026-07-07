@@ -1,7 +1,7 @@
 // VOLTAGE service worker: precache the game, network-first so deploys are
 // picked up immediately, cache fallback keeps it playable offline.
 // Bump the version when assets change to evict stale caches.
-const CACHE = 'voltage-v6';
+const CACHE = 'voltage-v7';
 
 const CORE = [
   './',
@@ -19,6 +19,10 @@ const CORE = [
   './js/pickups.js',
   './js/grenades.js',
   './js/hazard.js',
+  './js/net.js',
+  './js/remote.js',
+  './js/duel.js',
+  './lib/peerjs.min.js',
   './js/effects.js',
   './js/hud.js',
   './lib/three.module.min.js',

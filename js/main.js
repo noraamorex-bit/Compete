@@ -9,6 +9,7 @@ import { EnemyManager } from './enemy.js';
 import { Pickups } from './pickups.js';
 import { Grenades } from './grenades.js';
 import { LaserSweep } from './hazard.js';
+import { Duel } from './duel.js';
 import { Effects } from './effects.js';
 import { HUD } from './hud.js';
 import { input, isTouchDevice } from './input.js';
@@ -53,9 +54,10 @@ const pickups = new Pickups(scene, effects, world.colliders);
 const grenades = new Grenades(scene, effects, world.colliders, enemies);
 const hazard = new LaserSweep(scene, world.colliders);
 const hud = new HUD();
+const duel = new Duel({ scene, effects, player, weapon, grenades, hud });
 
 // ---------- Game state ----------
-const State = { MENU: 'menu', PLAYING: 'playing', PAUSED: 'paused', DEAD: 'dead' };
+const State = { MENU: 'menu', PLAYING: 'playing', PAUSED: 'paused', DEAD: 'dead', DUEL_LOBBY: 'duellobby', RESULT: 'result' };
 let state = State.MENU;
 let kills = 0;
 let score = 0;
@@ -74,6 +76,12 @@ let bestWave = Number(localStorage.getItem('voltage.bestWave') || 0);
 
 const LOOK_SENS = 0.0027;
 const BASE_FOV = isTouchDevice ? 70 : 75;
+
+// Inert input used while the duel countdown/pause freezes the local player.
+const FROZEN_INPUT = {
+  moveX: 0, moveZ: 0, sprint: false, firing: false, aiming: false,
+  consumeJump: () => false, consumeReload: () => false, consumeNade: () => false,
+};
 
 // ---------- Settings ----------
 const settings = {
@@ -236,6 +244,8 @@ function setState(next) {
   menuStart.classList.toggle('hidden', state !== State.MENU);
   menuPause.classList.toggle('hidden', state !== State.PAUSED);
   menuDeath.classList.toggle('hidden', state !== State.DEAD);
+  $('menu-duel').classList.toggle('hidden', state !== State.DUEL_LOBBY);
+  $('menu-result').classList.toggle('hidden', state !== State.RESULT);
   const inGame = state === State.PLAYING;
   hud.root.classList.toggle('hidden', !inGame && state !== State.PAUSED);
   mobileControls.classList.toggle('hidden', !isTouchDevice || !inGame);
@@ -294,6 +304,8 @@ function pause() {
 // Back to the start screen (weapon select lives there).
 function goToMenu() {
   input.releaseLock();
+  if (duel.active || duel.net.connected) duel.leave();
+  syncDuelUI(false);
   weapon.reset();
   player.respawn(world.playerSpawn);
   player.alive = false; // menu-backdrop drones ignore a dead player
@@ -371,6 +383,77 @@ btnGfx.addEventListener('click', () => {
 });
 refreshSettingsUI();
 
+// ---------- Duel UI ----------
+const duelStatus = $('duel-status');
+
+function syncDuelUI(active) {
+  document.body.classList.toggle('duel', active);
+  $('duel-score').classList.toggle('hidden', !active);
+}
+
+$('btn-duel').addEventListener('click', clickAnd(() => {
+  duelStatus.textContent = "HOST A MATCH OR ENTER A RIVAL'S CODE";
+  setState(State.DUEL_LOBBY);
+}));
+$('btn-host').addEventListener('click', clickAnd(() => duel.hostMatch()));
+$('btn-join').addEventListener('click', clickAnd(() => duel.joinMatch($('duel-code').value)));
+$('duel-code').addEventListener('keydown', (e) => {
+  e.stopPropagation(); // don't trigger game keys while typing
+  if (e.key === 'Enter') duel.joinMatch($('duel-code').value);
+});
+$('btn-duel-back').addEventListener('click', clickAnd(() => {
+  duel.cancelLobby();
+  goToMenu();
+}));
+$('btn-rematch').addEventListener('click', clickAnd(() => duel.requestRematch()));
+$('btn-result-menu').addEventListener('click', clickAnd(goToMenu));
+
+duel.onStatus = (text) => { duelStatus.textContent = text; };
+
+duel.onMatchStart = () => {
+  goFullscreen();
+  boostT = 0;
+  slowmoT = 0;
+  deathCamT = 0;
+  weapon.damageMult = 1;
+  enemies.clearAll();
+  pickups.clear();
+  hazard.stop();
+  effects.clear();
+  hud.reset();
+  hud.setAmmo(weapon.ammo, false);
+  syncDuelUI(true);
+  setState(State.PLAYING);
+  if (!isTouchDevice) input.requestLock(document.body);
+};
+
+duel.onScore = (me, them) => {
+  $('ds-me').textContent = me;
+  $('ds-them').textContent = them;
+};
+
+duel.onMatchEnd = (won, reason) => {
+  input.releaseLock();
+  syncDuelUI(false);
+  $('result-title').textContent = won ? 'VICTORY' : 'DEFEAT';
+  $('result-title').classList.toggle('death-title-lose', !won);
+  $('result-sub').textContent = reason || '';
+  $('result-me').textContent = duel.killsMe;
+  $('result-them').textContent = duel.killsThem;
+  $('btn-rematch').disabled = !duel.net.connected;
+  setState(State.RESULT);
+  if (won) audio.waveClear(); else audio.playerHurt();
+};
+
+duel.onLeft = (reason) => {
+  if (state === State.RESULT) {
+    $('result-sub').textContent = reason;
+    $('btn-rematch').disabled = true;
+  } else if (state === State.DUEL_LOBBY) {
+    duelStatus.textContent = reason;
+  }
+};
+
 // Esc → pause comes from pointer-lock release on desktop.
 input.onPause = () => { if (state === State.PLAYING && !isTouchDevice) pause(); };
 input.onAnyGesture = () => audio.resume();
@@ -382,6 +465,11 @@ window.addEventListener('keydown', (e) => {
 
 document.addEventListener('visibilitychange', () => {
   if (document.hidden) pause();
+});
+
+// Tell the rival we're leaving when the tab closes.
+window.addEventListener('pagehide', () => {
+  if (duel.active || duel.net.connected) duel.leave();
 });
 
 // Click canvas to re-lock when playing unlocked (e.g. after alt-tab).
@@ -396,7 +484,8 @@ weapon.onAmmoChanged = (ammo) => hud.setAmmo(ammo, false);
 weapon.onHit = (kind) => hud.hitmark(kind);
 
 player.onDamaged = () => hud.damageFlash();
-player.onDied = () => die();
+player.onDied = () => { if (duel.active) duel.onLocalDeath(); else die(); };
+weapon.onFired = (hitPoint) => { if (duel.active) duel.notifyFired(hitPoint); };
 
 enemies.onKill = (pos, crit, type) => {
   kills++;
@@ -430,7 +519,10 @@ enemies.onPlayerDamaged = (amount, srcPos) => {
   ));
 };
 
-grenades.onExplode = () => player.addTrauma(0.35);
+grenades.onExplode = (pos) => {
+  player.addTrauma(0.35);
+  if (duel.active) duel.explodeAt(pos);
+};
 
 hazard.onHitPlayer = (dmg, srcPos) => {
   player.takeDamage(dmg);
@@ -452,7 +544,7 @@ pickups.onPickup = (type) => {
 };
 
 enemies.onWaveCleared = () => {
-  if (state !== State.PLAYING || !player.alive) return;
+  if (state !== State.PLAYING || !player.alive || duel.active) return;
   waveState = 'intermission';
   intermissionT = CONFIG.waves.intermission;
   hud.waveBannerShow('WAVE CLEARED', `WAVE ${wave + 1} INCOMING`);
@@ -474,31 +566,46 @@ function frame(now) {
   let dt = Math.min((now - lastT) / 1000, 0.05);
   lastT = now;
 
-  if (state === State.PLAYING) {
-    // Boss-kill slow-mo: time dilates, then ramps back to full speed.
-    if (slowmoT > 0) {
+  // In a duel the simulation keeps running behind the pause menu.
+  const duelPaused = state === State.PAUSED && duel.active;
+
+  if (state === State.PLAYING || duelPaused) {
+    // Boss-kill slow-mo (solo only): time dilates, then ramps back.
+    if (!duel.active && slowmoT > 0) {
       slowmoT = Math.max(0, slowmoT - dt);
       dt *= Math.max(0.25, 1 - slowmoT);
     }
     runTime += dt;
 
+    // Input freezes during the duel countdown, respawn wait, and pause.
+    const frozen = duelPaused || (duel.active && duel.countdown > 0);
+
     // Look — slower while aiming for fine control.
     const look = input.consumeLook();
-    const adsSens = 1 - 0.35 * weapon.adsBlend;
-    player.look(look.x, look.y, LOOK_SENS * settings.sens * adsSens * (isTouchDevice ? 1.2 : 1));
+    if (!duelPaused) {
+      const adsSens = 1 - 0.35 * weapon.adsBlend;
+      player.look(look.x, look.y, LOOK_SENS * settings.sens * adsSens * (isTouchDevice ? 1.2 : 1));
+    }
 
-    player.update(dt, input, weapon.adsBlend);
-    weapon.update(dt, input, player, enemies, look.x, look.y);
-    enemies.update(dt, player);
-    pickups.update(dt, player);
+    player.update(dt, frozen ? FROZEN_INPUT : input, weapon.adsBlend);
+    if (!frozen) {
+      weapon.update(dt, input, player, duel.active ? duel.targets : enemies, look.x, look.y);
+    }
+
+    if (duel.active) {
+      duel.update(dt);
+    } else {
+      enemies.update(dt, player);
+      pickups.update(dt, player);
+      hazard.update(dt, player);
+    }
     grenades.update(dt);
-    hazard.update(dt, player);
 
     // Grenade throw
-    if (input.consumeNade() && player.alive && grenades.ready && !weapon.reloading) {
+    if (!frozen && input.consumeNade() && player.alive && grenades.ready && !weapon.reloading) {
       const origin = camera.getWorldPosition(new THREE.Vector3());
       const dir = camera.getWorldDirection(new THREE.Vector3());
-      grenades.throw(origin, dir);
+      if (grenades.throw(origin, dir) && duel.active) duel.notifyNade(origin, dir);
     }
 
     // Death cam: tip over and sink while the death screen waits.
@@ -517,9 +624,11 @@ function frame(now) {
       heartbeatT = 0.55 + (player.health / 30) * 0.5;
     }
 
-    // Damage boost timer
-    if (boostT > 0) boostT = Math.max(0, boostT - dt);
-    weapon.damageMult = boostT > 0 ? 2 : 1;
+    // Damage boost timer (solo pickups only)
+    if (!duel.active) {
+      if (boostT > 0) boostT = Math.max(0, boostT - dt);
+      weapon.damageMult = boostT > 0 ? 2 : 1;
+    }
 
     // FOV: sprint widens, ADS narrows toward the weapon's zoom.
     const targetFov = (BASE_FOV + CONFIG.player.sprintFovKick * player.sprintBlend)
@@ -536,7 +645,7 @@ function frame(now) {
     }
 
     // Wave intermission → next wave
-    if (waveState === 'intermission') {
+    if (!duel.active && waveState === 'intermission') {
       intermissionT -= dt;
       if (intermissionT <= 0) {
         waveState = 'active';
@@ -559,14 +668,19 @@ function frame(now) {
     hud.setLowHealthGlow(player.health);
     hud.setAmmo(weapon.ammo, weapon.reloading);
     hud.setCrosshairSpread(weapon.currentSpread, player.speed2D > 1);
-    hud.setCombo(multiplier, comboT / CONFIG.score.comboWindow);
     hud.setADS(weapon.adsBlend);
-    hud.setBoost(boostT);
     hud.setNade(grenades.cooldownFrac);
     hud.updateIndicators(dt, player.yaw);
-    const boss = enemies.activeBoss;
-    hud.setBossBar(boss ? boss.health / boss.maxHealth : null);
-  } else if (state === State.MENU || state === State.DEAD) {
+    if (duel.active) {
+      hud.setBoost(0);
+      hud.setBossBar(null);
+    } else {
+      hud.setCombo(multiplier, comboT / CONFIG.score.comboWindow);
+      hud.setBoost(boostT);
+      const boss = enemies.activeBoss;
+      hud.setBossBar(boss ? boss.health / boss.maxHealth : null);
+    }
+  } else if (state === State.MENU || state === State.DEAD || state === State.DUEL_LOBBY || state === State.RESULT) {
     if (camera.fov !== BASE_FOV) {
       camera.fov = BASE_FOV;
       camera.updateProjectionMatrix();
@@ -575,7 +689,7 @@ function frame(now) {
     const t = now * 0.00006;
     camera.position.set(Math.sin(t) * 26, 9, Math.cos(t) * 26);
     camera.lookAt(0, 1.5, 0);
-    if (state === State.MENU) enemies.update(dt, player);
+    if (state === State.MENU || state === State.DUEL_LOBBY) enemies.update(dt, player);
   }
 
   effects.update(dt, camera, innerWidth, innerHeight);
@@ -584,7 +698,7 @@ function frame(now) {
 
 // Debug/test hook (harmless in production).
 window.__game = {
-  player, enemies, weapon, input, settings, pickups, grenades, hazard,
+  player, enemies, weapon, input, settings, pickups, grenades, hazard, duel,
   get state() { return state; },
   get score() { return score; },
   get multiplier() { return multiplier; },

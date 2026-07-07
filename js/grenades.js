@@ -52,10 +52,21 @@ export class Grenades {
 
   throw(origin, dir) {
     if (this.cooldown > 0) return false;
+    if (!this._launch(origin, dir, false)) return false;
+    this.cooldown = G.cooldown;
+    return true;
+  }
+
+  // Replicates a rival's grenade: same physics/FX, no damage, no cooldown.
+  throwVisual(origin, dir) {
+    this._launch(origin, dir, true);
+  }
+
+  _launch(origin, dir, visual) {
     const n = this.pool.find((x) => !x.active);
     if (!n) return false;
-    this.cooldown = G.cooldown;
     n.active = true;
+    n.visual = visual;
     n.fuse = G.fuse;
     n.mesh.visible = true;
     n.mesh.position.copy(origin).addScaledVector(dir, 0.5);
@@ -73,6 +84,7 @@ export class Grenades {
     this.effects.explosion(pos.clone());
     this.effects.burst(pos, 0xffb060, 30, 10, 7, 0.8);
     this.effects.ring(pos.clone());
+    if (n.visual) return; // remote grenade: presentation only
 
     // AoE damage with linear falloff. Kills route through the normal pipeline.
     for (const e of this.enemies.enemies) {

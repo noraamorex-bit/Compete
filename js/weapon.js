@@ -61,6 +61,7 @@ export class Weapon {
 
     this.onAmmoChanged = null;  // cb(ammo)
     this.onHit = null;          // cb('hit'|'crit'|'kill')
+    this.onFired = null;        // cb(hitPoint) — for duel shot replication
 
     // --- viewmodel rig ---
     this.root = new THREE.Group();
@@ -261,6 +262,7 @@ export class Weapon {
       audio.hit(anyCrit);
       this.onHit?.(killed ? 'kill' : anyCrit ? 'crit' : 'hit');
     }
+    this.onFired?.(this._tmpV2); // last pellet's end point
 
     // Feel: kick, flash, recoil, shake, sound — recoil softened while aiming.
     const recoilScale = 1 - 0.35 * this.adsBlend;

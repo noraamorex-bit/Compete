@@ -17,6 +17,7 @@
   <script type="importmap">
     { "imports": { "three": "./lib/three.module.min.js" } }
   </script>
+  <script src="lib/peerjs.min.js" defer></script>
 </head>
 <body>
   <div id="app">
@@ -74,6 +75,12 @@
 
       <div id="boost-chip" class="hidden">DAMAGE ×2 <span id="boost-secs"></span></div>
 
+      <div id="duel-score" class="hidden">
+        <span class="ds-label">YOU</span><span id="ds-me">0</span>
+        <span class="ds-dash">—</span>
+        <span id="ds-them">0</span><span class="ds-label">RIVAL</span>
+      </div>
+
       <div id="hit-indicators"></div>
 
       <button id="btn-pause-hud" class="icon-btn" aria-label="Pause">❚❚</button>
@@ -106,6 +113,7 @@
         <p class="game-sub">ARENA COMBAT PROTOCOL</p>
         <div id="weapon-select"></div>
         <button id="btn-play" class="btn btn-primary">DEPLOY</button>
+        <button id="btn-duel" class="btn">DUEL 1v1</button>
         <div class="controls-hint" id="hint-desktop">
           <div><b>WASD</b> Move</div><div><b>LMB</b> Fire</div><div><b>RMB</b> Aim</div>
           <div><b>SPACE</b> Jump</div><div><b>SHIFT</b> Sprint</div><div><b>R</b> Reload</div>
@@ -115,6 +123,32 @@
           <div><b>LEFT</b> Move</div><div><b>RIGHT</b> Aim</div><div><b>◉</b> Fire</div>
         </div>
         <p class="best-line hidden" id="best-line">BEST <b id="best-num">0</b> PTS · WAVE <b id="best-wave">1</b></p>
+      </div>
+    </div>
+
+    <div id="menu-duel" class="menu hidden">
+      <div class="menu-panel">
+        <h2 class="menu-title">DUEL 1v1</h2>
+        <p id="duel-status">HOST A MATCH OR ENTER A RIVAL'S CODE</p>
+        <button id="btn-host" class="btn btn-primary">CREATE MATCH</button>
+        <div id="duel-join-row">
+          <input id="duel-code" type="text" maxlength="4" placeholder="CODE" autocomplete="off" autocapitalize="characters">
+          <button id="btn-join" class="btn">JOIN</button>
+        </div>
+        <button id="btn-duel-back" class="btn">BACK</button>
+      </div>
+    </div>
+
+    <div id="menu-result" class="menu hidden">
+      <div class="menu-panel">
+        <h2 class="menu-title" id="result-title">VICTORY</h2>
+        <p id="result-sub"></p>
+        <div class="death-stats">
+          <div class="stat"><span id="result-me">0</span><label>YOU</label></div>
+          <div class="stat"><span id="result-them">0</span><label>RIVAL</label></div>
+        </div>
+        <button id="btn-rematch" class="btn btn-primary">REMATCH</button>
+        <button id="btn-result-menu" class="btn">MAIN MENU</button>
       </div>
     </div>
 
