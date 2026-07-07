@@ -385,6 +385,10 @@ refreshSettingsUI();
 
 // ---------- Duel UI ----------
 const duelStatus = $('duel-status');
+const duelDiag = $('duel-diag');
+const diagLines = [];
+
+function resetDiag() { diagLines.length = 0; duelDiag.textContent = ''; }
 
 function syncDuelUI(active) {
   document.body.classList.toggle('duel', active);
@@ -393,6 +397,7 @@ function syncDuelUI(active) {
 
 $('btn-duel').addEventListener('click', clickAnd(() => {
   duelStatus.textContent = "HOST A MATCH OR ENTER A RIVAL'S CODE";
+  resetDiag();
   setState(State.DUEL_LOBBY);
 }));
 $('btn-host').addEventListener('click', clickAnd(() => duel.hostMatch()));
@@ -409,6 +414,13 @@ $('btn-rematch').addEventListener('click', clickAnd(() => duel.requestRematch())
 $('btn-result-menu').addEventListener('click', clickAnd(goToMenu));
 
 duel.onStatus = (text) => { duelStatus.textContent = text; };
+duel.onDiag = (line) => {
+  const t = new Date().toLocaleTimeString('en-US', { hour12: false });
+  diagLines.push(`${t}  ${line}`);
+  if (diagLines.length > 12) diagLines.shift();
+  duelDiag.textContent = diagLines.join('\n');
+  duelDiag.scrollTop = duelDiag.scrollHeight;
+};
 
 duel.onMatchStart = () => {
   goFullscreen();

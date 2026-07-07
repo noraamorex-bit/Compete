@@ -252,6 +252,20 @@ body.duel #btn-restart { display: none; }
 #duel-code:focus { border-color: var(--accent); }
 #duel-join-row .btn { min-width: 110px; }
 #result-sub { font-size: 12px; letter-spacing: 2px; color: var(--text-dim); }
+#duel-diag {
+  margin-top: 14px;
+  max-width: 320px;
+  max-height: 120px;
+  overflow-y: auto;
+  font-family: ui-monospace, "SF Mono", Menlo, Consolas, monospace;
+  font-size: 10px; line-height: 1.5;
+  color: var(--text-dim);
+  text-align: left;
+  white-space: pre-wrap;
+  word-break: break-word;
+  opacity: 0.75;
+}
+#duel-diag:empty { display: none; }
 .death-title-lose { color: var(--danger); }
 
 /* --- Directional damage indicators --- */

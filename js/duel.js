@@ -42,6 +42,7 @@ export class Duel {
 
     // Set by main:
     this.onStatus = null;       // cb(text) — lobby status line
+    this.onDiag = null;         // cb(line) — diagnostic log line
     this.onMatchStart = null;
     this.onMatchEnd = null;     // cb(won, reason)
     this.onScore = null;        // cb(me, them)
@@ -57,6 +58,7 @@ export class Duel {
         this._startMatch();
       }
     };
+    this.net.onDiag = (line) => this.onDiag?.(line);
     this.net.onMessage = (m) => this._handle(m);
     this.net.onClosed = () => this._opponentGone('RIVAL DISCONNECTED');
     this.net.onError = (msg) => {
