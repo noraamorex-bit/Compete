@@ -19,6 +19,7 @@ class Input {
     this.jumpQueued = false;
     this.sprint = false;
     this.reloadQueued = false;
+    this.nadeQueued = false;
 
     this.onPause = null;   // callbacks set by main
     this.onAnyGesture = null;
@@ -42,6 +43,7 @@ class Input {
       this._keys.add(e.code);
       if (e.code === 'Space') { this.jumpQueued = true; e.preventDefault(); }
       if (e.code === 'KeyR') this.reloadQueued = true;
+      if (e.code === 'KeyG') this.nadeQueued = true;
       this._updateMoveFromKeys();
     });
     window.addEventListener('keyup', (e) => {
@@ -189,6 +191,7 @@ class Input {
     hold('mc-fire', () => { this.firing = true; }, () => { this.firing = false; });
     hold('mc-jump', () => { this.jumpQueued = true; });
     hold('mc-reload', () => { this.reloadQueued = true; });
+    hold('mc-nade', () => { this.nadeQueued = true; });
 
     const sprintBtn = document.getElementById('mc-sprint');
     sprintBtn.addEventListener('touchstart', (e) => {
@@ -218,12 +221,14 @@ class Input {
 
   consumeJump() { const j = this.jumpQueued; this.jumpQueued = false; return j; }
   consumeReload() { const r = this.reloadQueued; this.reloadQueued = false; return r; }
+  consumeNade() { const n = this.nadeQueued; this.nadeQueued = false; return n; }
 
   reset() {
     this.firing = false;
     this.aiming = false;
     this.jumpQueued = false;
     this.reloadQueued = false;
+    this.nadeQueued = false;
     this.lookDX = 0;
     this.lookDY = 0;
     this._aimBtn?.classList.remove('toggled');

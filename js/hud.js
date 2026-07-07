@@ -144,6 +144,16 @@ export class HUD {
     this.crosshair.classList.toggle('ads', blend > 0.6);
   }
 
+  // frac 0..1 (1 = ready)
+  setNade(frac) {
+    if (this._nadeFrac === frac) return;
+    this._nadeFrac = frac;
+    const fill = document.getElementById('nade-fill');
+    fill.style.width = (frac * 100) + '%';
+    fill.classList.toggle('ready', frac >= 1);
+    document.getElementById('mc-nade')?.classList.toggle('cooling', frac < 1);
+  }
+
   // frac null hides the bar.
   setBossBar(frac) {
     this.bossWrap.classList.toggle('hidden', frac == null);

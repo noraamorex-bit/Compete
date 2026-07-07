@@ -104,6 +104,30 @@ export const CONFIG = {
     },
   },
 
+  grenade: {
+    cooldown: 6,
+    speed: 16,
+    upBoost: 3.0,
+    gravity: 19,
+    bounce: 0.42,
+    fuse: 1.5,
+    radius: 5.5,
+    damageCenter: 95,
+    damageEdge: 25,
+  },
+
+  hazard: {
+    startWave: 4,             // laser sweep activates from this wave on
+    innerRadius: 6.6,
+    outerRadius: 30,
+    height: 1.2,
+    halfWidth: 0.55,          // beam half-thickness for the hit test
+    speed: 0.55,              // rad/s sweep
+    damage: 12,
+    tickInterval: 0.6,        // min seconds between hits on the player
+    warmup: 2.5,              // blink-warning seconds at wave start
+  },
+
   pickups: {
     healthAmount: 35,
     boostDuration: 10,        // double-damage seconds

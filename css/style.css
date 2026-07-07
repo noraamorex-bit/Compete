@@ -115,6 +115,22 @@ html, body {
 #ammo-mag.empty { color: var(--danger); }
 #ammo-sep { font-size: 20px; color: var(--text-dim); margin: 0 4px; }
 #ammo-reserve { font-size: 20px; color: var(--text-dim); }
+#nade-wrap {
+  display: flex; align-items: center; gap: 6px;
+  justify-content: flex-end; margin-top: 4px;
+}
+#nade-icon { font-size: 11px; color: var(--text-dim); }
+#nade-bar {
+  width: 54px; height: 5px; border-radius: 3px; overflow: hidden;
+  background: rgba(255,255,255,.12);
+}
+#nade-fill {
+  display: block; height: 100%; width: 100%;
+  background: linear-gradient(90deg, #8fa3c0, #cfd9ea);
+  border-radius: 3px;
+}
+#nade-fill.ready { background: linear-gradient(90deg, var(--accent), var(--accent-hot)); }
+
 #reload-hint {
   font-size: 12px; letter-spacing: 2px; color: var(--accent);
   animation: pulse 1s ease-in-out infinite;
@@ -288,11 +304,14 @@ html, body {
 #mc-buttons {
   position: absolute; right: calc(14px + var(--sar)); bottom: calc(18px + var(--sab));
   display: grid;
-  grid-template-areas: "aim reload" "sprint jump" "fire fire";
+  grid-template-areas: "nade reload" "sprint jump" "aim fire";
   gap: 12px; justify-items: end;
+  align-items: end;
   pointer-events: none;
 }
 #mc-aim { grid-area: aim; }
+#mc-nade { grid-area: nade; }
+#mc-nade.cooling { opacity: .4; }
 .mc-btn {
   pointer-events: auto;
   width: 58px; height: 58px; border-radius: 50%;
@@ -397,6 +416,37 @@ html, body {
 .wpn-card.locked { opacity: .45; cursor: default; }
 .wpn-card.locked:hover { transform: none; background: rgba(255,255,255,.06); }
 .wpn-card.locked .wpn-desc { color: var(--danger); }
+.wpn-bars { display: flex; flex-direction: column; gap: 3px; margin-top: 7px; }
+.wpn-bar-row { display: flex; align-items: center; gap: 5px; }
+.wpn-bar-row label {
+  font-size: 8px; letter-spacing: 1px; color: var(--text-dim);
+  width: 26px; text-align: left; cursor: inherit;
+}
+.wpn-bar { flex: 1; height: 3px; border-radius: 2px; background: rgba(255,255,255,.1); overflow: hidden; }
+.wpn-bar i {
+  display: block; height: 100%;
+  background: linear-gradient(90deg, var(--accent), var(--accent-hot));
+  border-radius: 2px;
+}
+
+/* --- Leaderboard (death screen) --- */
+#leaderboard { width: min(360px, 84vw); margin-bottom: 6px; }
+#leaderboard-title {
+  font-size: 11px; letter-spacing: 3px; color: var(--text-dim);
+  margin-bottom: 8px;
+}
+.lb-row {
+  display: flex; align-items: baseline; gap: 10px;
+  padding: 5px 12px; border-radius: 7px;
+  font-size: 13px;
+  font-variant-numeric: tabular-nums;
+}
+.lb-row:nth-child(odd) { background: rgba(255,255,255,.05); }
+.lb-row.current { outline: 1px solid var(--accent); background: rgba(255,181,46,.1); }
+.lb-rank { color: var(--text-dim); width: 16px; }
+.lb-score { font-weight: 800; color: var(--accent); min-width: 64px; text-align: right; }
+.lb-wave { color: var(--text); }
+.lb-wpn { color: var(--text-dim); margin-left: auto; font-size: 11px; letter-spacing: 1px; }
 
 /* --- Settings (pause menu) --- */
 .settings-block {

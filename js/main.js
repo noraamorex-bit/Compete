@@ -7,6 +7,8 @@ import { Player } from './player.js';
 import { Weapon } from './weapon.js';
 import { EnemyManager } from './enemy.js';
 import { Pickups } from './pickups.js';
+import { Grenades } from './grenades.js';
+import { LaserSweep } from './hazard.js';
 import { Effects } from './effects.js';
 import { HUD } from './hud.js';
 import { input, isTouchDevice } from './input.js';
@@ -48,6 +50,8 @@ const player = new Player(camera, world.colliders);
 const weapon = new Weapon(camera, effects, world.colliders, weaponStats(selectedWeaponId));
 const enemies = new EnemyManager(scene, effects, world.colliders, world.enemySpawns);
 const pickups = new Pickups(scene, effects, world.colliders);
+const grenades = new Grenades(scene, effects, world.colliders, enemies);
+const hazard = new LaserSweep(scene, world.colliders);
 const hud = new HUD();
 
 // ---------- Game state ----------
@@ -61,6 +65,9 @@ let wave = 1;
 let waveState = 'active';        // 'active' | 'intermission'
 let intermissionT = 0;
 let boostT = 0;                  // double-damage seconds remaining
+let slowmoT = 0;                 // boss-kill slow-mo seconds remaining
+let heartbeatT = 0;
+let deathCamT = 0;
 let runTime = 0;
 let bestScore = Number(localStorage.getItem('voltage.bestScore') || 0);
 let bestWave = Number(localStorage.getItem('voltage.bestWave') || 0);
@@ -130,6 +137,26 @@ refreshBestLine();
 // ---------- Weapon select UI ----------
 const weaponSelectEl = $('weapon-select');
 
+// Normalization ceilings for the stat bars, computed from the roster.
+const statMax = {
+  dmg: Math.max(...CONFIG.weapons.map((w) => w.damage * (w.pellets || 1))),
+  rate: Math.max(...CONFIG.weapons.map((w) => 1 / w.fireInterval)),
+  rng: Math.max(...CONFIG.weapons.map((w) => w.range)),
+};
+
+function statBarsHTML(w) {
+  const bar = (label, frac) => `
+    <div class="wpn-bar-row"><label>${label}</label>
+      <div class="wpn-bar"><i style="width:${Math.round(clampFrac(frac) * 100)}%"></i></div>
+    </div>`;
+  return `<div class="wpn-bars">
+    ${bar('DMG', (w.damage * (w.pellets || 1)) / statMax.dmg)}
+    ${bar('RATE', (1 / w.fireInterval) / statMax.rate)}
+    ${bar('RNG', w.range / statMax.rng)}
+  </div>`;
+}
+const clampFrac = (f) => Math.max(0.06, Math.min(1, f));
+
 function refreshWeaponMenu() {
   weaponSelectEl.innerHTML = '';
   for (const w of CONFIG.weapons) {
@@ -140,7 +167,8 @@ function refreshWeaponMenu() {
       + (unlocked ? '' : ' locked');
     card.innerHTML = `
       <div class="wpn-name">${w.name}</div>
-      <div class="wpn-desc">${unlocked ? w.desc : `${Math.min(totalKills, w.unlockKills)}/${w.unlockKills} KILLS`}</div>`;
+      <div class="wpn-desc">${unlocked ? w.desc : `${Math.min(totalKills, w.unlockKills)}/${w.unlockKills} KILLS`}</div>
+      ${unlocked ? statBarsHTML(w) : ''}`;
     if (unlocked) {
       card.addEventListener('click', () => {
         audio.init();
@@ -155,6 +183,41 @@ function refreshWeaponMenu() {
   }
 }
 refreshWeaponMenu();
+
+// ---------- Local leaderboard ----------
+function loadRuns() {
+  try { return JSON.parse(localStorage.getItem('voltage.runs') || '[]'); }
+  catch { return []; }
+}
+
+function recordRun() {
+  const runs = loadRuns();
+  const entry = {
+    score, wave, kills,
+    weapon: weapon.stats.name,
+    date: new Date().toISOString().slice(0, 10),
+    t: Date.now(),
+  };
+  runs.push(entry);
+  runs.sort((a, b) => b.score - a.score);
+  const top = runs.slice(0, 5);
+  localStorage.setItem('voltage.runs', JSON.stringify(top));
+  return top.some((r) => r.t === entry.t) ? entry.t : null;
+}
+
+function renderLeaderboard(currentT) {
+  const runs = loadRuns();
+  const wrap = $('leaderboard');
+  const rows = $('leaderboard-rows');
+  wrap.classList.toggle('hidden', runs.length === 0);
+  rows.innerHTML = runs.map((r, i) => `
+    <div class="lb-row${r.t === currentT ? ' current' : ''}">
+      <span class="lb-rank">${i + 1}</span>
+      <span class="lb-score">${r.score.toLocaleString('en-US')}</span>
+      <span class="lb-wave">W${r.wave}</span>
+      <span class="lb-wpn">${r.weapon}</span>
+    </div>`).join('');
+}
 
 function trackKillProgress() {
   totalKills++;
@@ -193,6 +256,8 @@ function startRun() {
   multiplier = 1;
   comboT = 0;
   boostT = 0;
+  slowmoT = 0;
+  deathCamT = 0;
   wave = 1;
   waveState = 'active';
   runTime = 0;
@@ -202,6 +267,8 @@ function startRun() {
   enemies.clearAll();
   enemies.beginWave(waveConfig(1), player.position);
   pickups.clear();
+  grenades.reset();
+  hazard.setWave(1);
   effects.clear();
   hud.reset();
   hud.setAmmo(weapon.ammo, false);
@@ -233,6 +300,8 @@ function goToMenu() {
   enemies.clearAll();
   enemies.beginWave({ types: Array(5).fill('drone'), maxAlive: 5 }, new THREE.Vector3(0, 0, 0));
   pickups.clear();
+  grenades.reset();
+  hazard.stop();
   effects.clear();
   refreshWeaponMenu();
   refreshBestLine();
@@ -241,6 +310,7 @@ function goToMenu() {
 
 function die() {
   input.releaseLock();
+  deathCamT = 0;
   if (score > bestScore) {
     bestScore = score;
     localStorage.setItem('voltage.bestScore', String(bestScore));
@@ -250,12 +320,14 @@ function die() {
     localStorage.setItem('voltage.bestWave', String(bestWave));
   }
   refreshBestLine();
+  const currentT = recordRun();
+  renderLeaderboard(currentT);
   $('death-score').textContent = score.toLocaleString('en-US');
   $('death-wave').textContent = wave;
   $('death-kills').textContent = kills;
   $('death-best').textContent = bestScore.toLocaleString('en-US');
-  // Short delay so the death moment reads before the menu appears.
-  setTimeout(() => { if (state === State.PLAYING) setState(State.DEAD); }, 900);
+  // Delay so the death-cam fall reads before the menu appears.
+  setTimeout(() => { if (state === State.PLAYING) setState(State.DEAD); }, 1300);
 }
 
 // Buttons
@@ -335,6 +407,7 @@ enemies.onKill = (pos, crit, type) => {
   hud.setKills(kills);
   hud.setScore(score);
   player.addTrauma(type === 'boss' ? 0.3 : 0.12);
+  if (type === 'boss') slowmoT = 0.9; // brief slow-mo beat
   trackKillProgress();
 
   // Drops: bosses always pay out, others roll the dice.
@@ -351,6 +424,16 @@ enemies.onKill = (pos, crit, type) => {
 };
 
 enemies.onPlayerDamaged = (amount, srcPos) => {
+  hud.showDamageFrom(Math.atan2(
+    player.position.x - srcPos.x,
+    player.position.z - srcPos.z
+  ));
+};
+
+grenades.onExplode = () => player.addTrauma(0.35);
+
+hazard.onHitPlayer = (dmg, srcPos) => {
+  player.takeDamage(dmg);
   hud.showDamageFrom(Math.atan2(
     player.position.x - srcPos.x,
     player.position.z - srcPos.z
@@ -388,10 +471,15 @@ let lastT = performance.now();
 
 function frame(now) {
   requestAnimationFrame(frame);
-  const dt = Math.min((now - lastT) / 1000, 0.05);
+  let dt = Math.min((now - lastT) / 1000, 0.05);
   lastT = now;
 
   if (state === State.PLAYING) {
+    // Boss-kill slow-mo: time dilates, then ramps back to full speed.
+    if (slowmoT > 0) {
+      slowmoT = Math.max(0, slowmoT - dt);
+      dt *= Math.max(0.25, 1 - slowmoT);
+    }
     runTime += dt;
 
     // Look — slower while aiming for fine control.
@@ -403,6 +491,31 @@ function frame(now) {
     weapon.update(dt, input, player, enemies, look.x, look.y);
     enemies.update(dt, player);
     pickups.update(dt, player);
+    grenades.update(dt);
+    hazard.update(dt, player);
+
+    // Grenade throw
+    if (input.consumeNade() && player.alive && grenades.ready && !weapon.reloading) {
+      const origin = camera.getWorldPosition(new THREE.Vector3());
+      const dir = camera.getWorldDirection(new THREE.Vector3());
+      grenades.throw(origin, dir);
+    }
+
+    // Death cam: tip over and sink while the death screen waits.
+    if (!player.alive) {
+      deathCamT += dt;
+      const k = Math.min(1, deathCamT / 1.1);
+      camera.position.y = Math.max(0.5, camera.position.y - dt * (0.8 + k * 1.6));
+      camera.rotation.z += (0.5 - camera.rotation.z) * Math.min(1, dt * 3.5);
+      camera.rotation.x += (-0.12 - camera.rotation.x) * Math.min(1, dt * 2);
+    }
+
+    // Low-health heartbeat
+    heartbeatT -= dt;
+    if (player.alive && player.health < 30 && heartbeatT <= 0) {
+      audio.heartbeat();
+      heartbeatT = 0.55 + (player.health / 30) * 0.5;
+    }
 
     // Damage boost timer
     if (boostT > 0) boostT = Math.max(0, boostT - dt);
@@ -437,6 +550,7 @@ function frame(now) {
         }
         audio.waveStart();
         enemies.beginWave(cfg, player.position);
+        hazard.setWave(wave);
       }
     }
 
@@ -448,6 +562,7 @@ function frame(now) {
     hud.setCombo(multiplier, comboT / CONFIG.score.comboWindow);
     hud.setADS(weapon.adsBlend);
     hud.setBoost(boostT);
+    hud.setNade(grenades.cooldownFrac);
     hud.updateIndicators(dt, player.yaw);
     const boss = enemies.activeBoss;
     hud.setBossBar(boss ? boss.health / boss.maxHealth : null);
@@ -469,7 +584,7 @@ function frame(now) {
 
 // Debug/test hook (harmless in production).
 window.__game = {
-  player, enemies, weapon, input, settings, pickups,
+  player, enemies, weapon, input, settings, pickups, grenades, hazard,
   get state() { return state; },
   get score() { return score; },
   get multiplier() { return multiplier; },

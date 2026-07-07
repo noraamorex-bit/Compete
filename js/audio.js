@@ -169,6 +169,29 @@ class AudioEngine {
     this._tone(660, 0.06, { type: 'sine', gain: 0.15, endFreq: 880 });
   }
 
+  heartbeat() {
+    if (!this._ok()) return;
+    this._tone(58, 0.11, { type: 'sine', gain: 0.4, endFreq: 40 });
+    setTimeout(() => this._ok() && this._tone(52, 0.09, { type: 'sine', gain: 0.3, endFreq: 38 }), 160);
+  }
+
+  grenadeThrow() {
+    if (!this._ok()) return;
+    this._noise(0.16, { type: 'bandpass', freq: 900, q: 1.2, gain: 0.18, decay: 0.16 });
+  }
+
+  grenadeBounce() {
+    if (!this._ok()) return;
+    this._tone(320, 0.05, { type: 'square', gain: 0.08, endFreq: 200 });
+  }
+
+  grenadeExplode() {
+    if (!this._ok()) return;
+    this._noise(0.5, { type: 'lowpass', freq: 700, gain: 0.65, decay: 0.5 });
+    this._tone(110, 0.4, { type: 'triangle', gain: 0.5, endFreq: 30 });
+    this._noise(0.12, { type: 'highpass', freq: 3000, gain: 0.2, decay: 0.12 });
+  }
+
   bossSpawn() {
     if (!this._ok()) return;
     this._tone(80, 0.9, { type: 'sawtooth', gain: 0.3, endFreq: 45 });

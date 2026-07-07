@@ -44,6 +44,7 @@
         <div id="ammo-wrap">
           <span id="ammo-mag">30</span><span id="ammo-sep">/</span><span id="ammo-reserve">∞</span>
         </div>
+        <div id="nade-wrap"><span id="nade-icon">◉</span><div id="nade-bar"><i id="nade-fill"></i></div></div>
         <div id="reload-hint" class="hidden">RELOAD [R]</div>
       </div>
 
@@ -89,6 +90,7 @@
       </div>
       <div id="look-zone"></div>
       <div id="mc-buttons">
+        <button id="mc-nade" class="mc-btn" aria-label="Grenade"><svg viewBox="0 0 24 24"><circle cx="12" cy="14" r="6.5" fill="currentColor"/><rect x="10" y="4" width="4" height="4" rx="1" fill="currentColor"/><path d="M14 5.5c2 0 3.5-1 3.5-2.5" fill="none" stroke="currentColor" stroke-width="1.6"/></svg></button>
         <button id="mc-aim" class="mc-btn" aria-label="Aim"><svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="7" fill="none" stroke="currentColor" stroke-width="1.8"/><path d="M12 2v4M12 18v4M2 12h4M18 12h4" stroke="currentColor" stroke-width="1.8"/></svg></button>
         <button id="mc-fire" class="mc-btn mc-fire" aria-label="Fire"><svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="5" fill="currentColor"/><circle cx="12" cy="12" r="9.5" fill="none" stroke="currentColor" stroke-width="1.6"/></svg></button>
         <button id="mc-jump" class="mc-btn" aria-label="Jump"><svg viewBox="0 0 24 24"><path d="M12 4l6 7h-4v9h-4v-9H6z" fill="currentColor"/></svg></button>
@@ -107,6 +109,7 @@
         <div class="controls-hint" id="hint-desktop">
           <div><b>WASD</b> Move</div><div><b>LMB</b> Fire</div><div><b>RMB</b> Aim</div>
           <div><b>SPACE</b> Jump</div><div><b>SHIFT</b> Sprint</div><div><b>R</b> Reload</div>
+          <div><b>G</b> Grenade</div><div><b>ESC</b> Pause</div>
         </div>
         <div class="controls-hint" id="hint-mobile">
           <div><b>LEFT</b> Move</div><div><b>RIGHT</b> Aim</div><div><b>◉</b> Fire</div>
@@ -140,6 +143,10 @@
           <div class="stat"><span id="death-wave">1</span><label>WAVE</label></div>
           <div class="stat"><span id="death-kills">0</span><label>KILLS</label></div>
           <div class="stat"><span id="death-best">0</span><label>BEST</label></div>
+        </div>
+        <div id="leaderboard" class="hidden">
+          <div id="leaderboard-title">BEST RUNS</div>
+          <div id="leaderboard-rows"></div>
         </div>
         <button id="btn-respawn" class="btn btn-primary">REDEPLOY</button>
         <button id="btn-death-menu" class="btn">MAIN MENU</button>

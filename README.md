@@ -10,6 +10,10 @@ A complete, polished browser first-person shooter. One arena, one rifle, endless
 - Six unlockable weapons (assault rifle, shotgun, SMG, LMG, marksman rifle, hand cannon) with aim-down-sights, recoil, bloom spread, muzzle flash, tracers, reload animations, hit markers, floating damage numbers
 - Three enemy types: sentinel drones (chase/orbit + plasma bursts), kamikaze rushers (charge and detonate), and boss sentinels every 5th wave with their own health bar
 - Pickups: health packs and double-damage cores drop from kills (bosses always pay out)
+- Grenades on a 6s cooldown (G / grenade button) with bouncing physics and AoE falloff
+- A rotating laser hazard sweeps the arena from wave 4 — duck behind cover or take high ground
+- Local top-5 leaderboard on the death screen; weapon cards show damage/rate/range stat bars
+- Juice: boss-kill slow-mo, low-health heartbeat, death camera
 - Desktop **and** mobile: pointer-lock mouse aim + WASD, or virtual joystick + swipe look + touch buttons (auto-detected)
 - Minimal modern HUD: health, ammo, kills, streaks, dynamic crosshair, directional damage indicators
 - Procedural Web Audio sound effects — zero audio assets
