@@ -47,6 +47,9 @@ export class Duel {
     this.onScore = null;        // cb(me, them)
     this.onLeft = null;         // opponent gone → back to menu
 
+    this.net.onOpen = () => {
+      if (this.net.isHost) this.onStatus?.(`CODE: ${this.net.code} — WAITING FOR RIVAL…`);
+    };
     this.net.onConnected = () => {
       this.onStatus?.('RIVAL CONNECTED');
       if (this.net.isHost) {
@@ -83,9 +86,8 @@ export class Duel {
   // ---- Lobby ----
 
   hostMatch() {
-    const code = this.net.host();
-    this.onStatus?.(`CODE: ${code} — WAITING FOR RIVAL…`);
-    return code;
+    this.onStatus?.('CONTACTING MATCH SERVER…');
+    return this.net.host(); // code shown once the server confirms (onOpen)
   }
 
   joinMatch(code) {
