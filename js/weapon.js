@@ -10,36 +10,113 @@ const REST_POS = new THREE.Vector3(0.24, -0.22, -0.38);
 // Sight dot sits at local (0, 0.093, z); this root offset centers it on the camera.
 const ADS_POS = new THREE.Vector3(0, -0.093, -0.46);
 
+// Parametric low-poly rifle. The camera sees the gun's left (-x) flank, so
+// mechanical details (port, charging handle, vents) live on that side.
+// The optic's glow dot sits at local (0, 0.093, z) — ADS_POS aligns to it.
 function buildRifleMesh(stats) {
   const g = new THREE.Group();
-  const dark = new THREE.MeshStandardMaterial({ color: 0x232833, roughness: 0.55, metalness: 0.35 });
-  const mid = new THREE.MeshStandardMaterial({ color: 0x3a4252, roughness: 0.6, metalness: 0.25 });
-  const accent = new THREE.MeshStandardMaterial({ color: stats.accent, roughness: 0.45, metalness: 0.2 });
+  // Note: keep metalness low — there's no environment map, so high
+  // metalness renders as pure black regardless of base color.
+  const metal = new THREE.MeshStandardMaterial({ color: 0x4d5666, roughness: 0.45, metalness: 0.35 });
+  const steel = new THREE.MeshStandardMaterial({ color: 0x353d49, roughness: 0.4, metalness: 0.45 });
+  const polymer = new THREE.MeshStandardMaterial({ color: 0x525b6a, roughness: 0.8, metalness: 0.05 });
+  const polymerDark = new THREE.MeshStandardMaterial({ color: 0x343a45, roughness: 0.8, metalness: 0.05 });
+  const accent = new THREE.MeshStandardMaterial({ color: stats.accent, roughness: 0.5, metalness: 0.25 });
   const glow = new THREE.MeshBasicMaterial({ color: 0x4de8ff });
   const box = new THREE.BoxGeometry(1, 1, 1);
 
-  const part = (mat, x, y, z, sx, sy, sz) => {
+  const part = (mat, x, y, z, sx, sy, sz, rx = 0, ry = 0, rz = 0) => {
     const m = new THREE.Mesh(box, mat);
     m.position.set(x, y, z);
     m.scale.set(sx, sy, sz);
+    m.rotation.set(rx, ry, rz);
     g.add(m);
     return m;
   };
 
   const barrelLen = 0.34 * stats.barrel;
   const barrelEnd = -0.25 - barrelLen;
+  const guardLen = barrelLen * 0.72;
+  const guardMid = -0.25 - guardLen / 2;
 
-  part(mid, 0, 0, -0.12, 0.062, 0.085, 0.46);                        // receiver
-  part(dark, 0, 0.005, -0.25 - barrelLen / 2, 0.034, 0.034, barrelLen); // barrel
-  part(dark, 0, 0.048, -0.03, 0.03, 0.03, 0.2);                      // top rail
-  part(mid, 0, 0.075, -0.02, 0.045, 0.03, 0.075);                    // sight block
-  part(glow, 0, 0.093, -0.02, 0.014, 0.012, 0.014);                  // sight dot
-  part(dark, 0, -0.07, 0.02, 0.05, 0.09, 0.06);                      // grip
-  const mag = part(accent, 0, -0.095, -0.09, 0.05, 0.13, 0.07);      // magazine
-  mag.rotation.x = 0.12;
-  part(mid, 0, -0.01, 0.16, 0.05, 0.075, 0.16);                      // stock
-  part(dark, 0, 0.005, barrelEnd - 0.02, 0.045, 0.045, 0.045);       // muzzle brake
-  part(accent, 0, -0.028, Math.max(barrelEnd + 0.1, -0.32), 0.055, 0.028, 0.12); // foregrip
+  // ---- Receiver ----
+  part(metal, 0, 0.012, -0.09, 0.05, 0.046, 0.34);                    // upper
+  part(polymer, 0, -0.028, -0.06, 0.048, 0.05, 0.27);                 // lower
+  part(steel, -0.026, 0.012, -0.03, 0.004, 0.02, 0.07);               // ejection port
+  part(steel, -0.03, 0.034, 0.045, 0.014, 0.01, 0.045);               // charging handle
+  part(polymerDark, -0.027, -0.02, -0.015, 0.004, 0.014, 0.03);       // mag release
+  part(steel, -0.027, -0.005, 0.02, 0.005, 0.008, 0.035, 0, 0, 0.5);  // selector lever
+
+  // ---- Top rail with notches ----
+  part(metal, 0, 0.043, -0.09, 0.032, 0.012, 0.32);
+  for (let i = 0; i < 7; i++) {
+    part(steel, 0, 0.051, -0.21 + i * 0.04, 0.034, 0.004, 0.016);
+  }
+
+  // ---- Handguard: octagonal (two boxes, one rotated 45°) + vents ----
+  part(polymer, 0, 0.008, guardMid, 0.046, 0.048, guardLen);
+  part(polymer, 0, 0.008, guardMid, 0.04, 0.04, guardLen * 0.98, 0, 0, Math.PI / 4);
+  const vents = Math.max(2, Math.round(guardLen / 0.075));
+  for (let i = 0; i < vents; i++) {
+    const vz = -0.27 - (i + 0.5) * (guardLen - 0.04) / vents;
+    part(polymerDark, -0.025, 0.008, vz, 0.003, 0.016, 0.032);
+    part(polymerDark, 0, -0.019, vz, 0.016, 0.003, 0.032);            // bottom vent
+  }
+  part(accent, 0, 0.008, -0.25 - guardLen + 0.015, 0.05, 0.052, 0.014); // guard end band
+
+  // ---- Barrel, muzzle device, front sight ----
+  part(steel, 0, 0.012, (barrelEnd - 0.25 - guardLen) / 2 - 0.02, 0.02, 0.02, barrelLen - guardLen + 0.02);
+  part(metal, 0, 0.012, barrelEnd - 0.025, 0.03, 0.032, 0.06);        // muzzle brake
+  part(polymerDark, -0.017, 0.012, barrelEnd - 0.02, 0.003, 0.014, 0.035); // brake slot
+  part(polymerDark, 0.017, 0.012, barrelEnd - 0.02, 0.003, 0.014, 0.035);
+  part(steel, 0, 0.045, barrelEnd + 0.06, 0.007, 0.03, 0.008);        // front sight post
+
+  // ---- Red-dot optic: open tube you can see through; dot at y 0.093 ----
+  part(metal, -0.02, 0.082, -0.02, 0.006, 0.045, 0.065);              // left plate
+  part(metal, 0.02, 0.082, -0.02, 0.006, 0.045, 0.065);               // right plate
+  part(metal, 0, 0.107, -0.02, 0.046, 0.007, 0.065);                  // hood
+  part(metal, 0, 0.062, -0.02, 0.046, 0.008, 0.065);                  // base
+  part(glow, 0, 0.093, -0.02, 0.008, 0.008, 0.004);                   // the dot
+
+  // ---- Grip, trigger, trigger guard ----
+  part(polymer, 0, -0.09, 0.045, 0.04, 0.095, 0.052, -0.28);          // angled grip
+  part(polymerDark, 0, -0.128, 0.058, 0.042, 0.02, 0.05, -0.28);      // grip base
+  part(steel, 0, -0.06, -0.002, 0.007, 0.028, 0.01, 0.25);            // trigger
+  part(metal, 0, -0.082, 0.0, 0.036, 0.006, 0.075);                   // guard bottom
+  part(metal, 0, -0.066, -0.035, 0.036, 0.03, 0.006);                 // guard front
+  part(metal, 0, -0.066, 0.036, 0.036, 0.03, 0.006);                  // guard rear
+
+  // ---- Magazine (animated during reload) ----
+  const mag = new THREE.Group();
+  mag.position.set(0, -0.075, -0.085);
+  const isShotgun = (stats.pellets || 1) > 1;
+  const bigMag = stats.magSize >= 60;
+  if (isShotgun) {
+    // Shotgun: under-barrel shell tube instead of a box mag.
+    part(steel, 0, -0.012, guardMid - 0.02, 0.024, 0.024, guardLen + 0.05);
+    const shell = new THREE.Mesh(box, accent);
+    shell.position.set(0, -0.02, 0.02);
+    shell.scale.set(0.03, 0.04, 0.05);
+    mag.add(shell); // token "shell in the loading port" so reloads still read
+  } else {
+    const body = new THREE.Mesh(box, polymerDark);
+    body.scale.set(0.042, bigMag ? 0.16 : 0.12, bigMag ? 0.11 : 0.062);
+    body.position.set(0, bigMag ? -0.06 : -0.045, 0);
+    body.rotation.x = bigMag ? 0 : 0.18;
+    mag.add(body);
+    const base = new THREE.Mesh(box, accent);
+    base.scale.set(0.046, 0.016, bigMag ? 0.115 : 0.068);
+    base.position.set(0, bigMag ? -0.145 : -0.108, bigMag ? 0 : -0.012);
+    base.rotation.x = bigMag ? 0 : 0.18;
+    mag.add(base);
+  }
+  g.add(mag);
+
+  // ---- Stock: buffer tube, slim butt (kept dark — it sits near the eye in ADS) ----
+  part(metal, 0, 0.008, 0.13, 0.028, 0.028, 0.1);                     // buffer tube
+  part(polymerDark, 0, -0.022, 0.2, 0.038, 0.07, 0.08);               // butt
+  part(polymerDark, 0, 0.026, 0.19, 0.034, 0.022, 0.09);              // cheek riser
+  part(accent, -0.02, -0.022, 0.2, 0.002, 0.05, 0.06);                // side accent stripe
 
   g.traverse((m) => { if (m.isMesh) { m.castShadow = false; m.receiveShadow = false; } });
   return { group: g, mag, muzzleZ: barrelEnd - 0.06 };
@@ -67,6 +144,11 @@ export class Weapon {
     this.root = new THREE.Group();
     this.root.position.copy(REST_POS);
     camera.add(this.root);
+
+    // Short-range fill so the gun's camera-facing surfaces aren't pitch black.
+    const fill = new THREE.PointLight(0xbfd0e8, 0.55, 2.2, 2);
+    fill.position.set(0.05, 0.18, 0.25);
+    camera.add(fill);
 
     // Muzzle flash: additive plane + point light, repositioned per weapon.
     this.muzzle = new THREE.Object3D();
@@ -104,6 +186,7 @@ export class Weapon {
     this.mesh = group;
     this.magMesh = mag;
     this._magRest = mag.position.clone();
+    this._magRestRotX = mag.rotation.x;
     this.root.add(this.mesh);
     this.muzzle.position.set(0, 0.005, muzzleZ);
     this.mesh.add(this.muzzle);
@@ -304,10 +387,10 @@ export class Weapon {
       const magP = clamp((p - 0.2) / 0.5, 0, 1);
       const magOut = Math.sin(magP * Math.PI);
       this.magMesh.position.y = this._magRest.y - magOut * 0.14;
-      this.magMesh.rotation.x = 0.12 + magOut * 0.5;
+      this.magMesh.rotation.x = this._magRestRotX + magOut * 0.5;
     } else {
       this.magMesh.position.copy(this._magRest);
-      this.magMesh.rotation.x = 0.12;
+      this.magMesh.rotation.x = this._magRestRotX;
     }
 
     // Blend hip rest pose toward the centered ADS pose.
@@ -322,8 +405,8 @@ export class Weapon {
     );
     this.root.rotation.set(
       swayY * 1.6 + this._kick * 0.12 * (1 - 0.4 * ads) + rRot,
-      swayX * 1.8,
-      swayX * 0.8 - rRot * 0.35
+      swayX * 1.8 - hip * 0.05,          // slight inward cant at the hip
+      swayX * 0.8 - rRot * 0.35 + hip * 0.025
     );
 
     // Muzzle flash decay

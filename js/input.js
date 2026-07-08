@@ -28,6 +28,7 @@ class Input {
     this._locked = false;
     this._joyTouch = null;   // { id, ox, oy }
     this._lookTouch = null;  // { id, x, y }
+    this._fireTouch = null;  // { id, x, y } — fire button doubles as look surface
     this._sprintToggle = false;
 
     this._bindKeyboard();
@@ -143,18 +144,25 @@ class Input {
       this._lookTouch = { id: t.identifier, x: t.clientX, y: t.clientY };
     }, { passive: false });
 
+    const applyLook = (touchState, t) => {
+      this.lookDX += (t.clientX - touchState.x) * 2.4;
+      this.lookDY += (t.clientY - touchState.y) * 2.4;
+      touchState.x = t.clientX;
+      touchState.y = t.clientY;
+    };
+
     const onMove = (e) => {
       // Only claim the gesture when it belongs to us (keeps menu sliders usable).
-      if (!this._joyTouch && !this._lookTouch) return;
+      if (!this._joyTouch && !this._lookTouch && !this._fireTouch) return;
       e.preventDefault();
       for (const t of e.changedTouches) {
         if (this._joyTouch && t.identifier === this._joyTouch.id) {
           setJoy(t.clientX - this._joyTouch.ox, t.clientY - this._joyTouch.oy);
         } else if (this._lookTouch && t.identifier === this._lookTouch.id) {
-          this.lookDX += (t.clientX - this._lookTouch.x) * 2.4;
-          this.lookDY += (t.clientY - this._lookTouch.y) * 2.4;
-          this._lookTouch.x = t.clientX;
-          this._lookTouch.y = t.clientY;
+          applyLook(this._lookTouch, t);
+        } else if (this._fireTouch && t.identifier === this._fireTouch.id) {
+          // Slide-to-aim while holding fire (CoD-mobile style).
+          applyLook(this._fireTouch, t);
         }
       }
     };
@@ -167,6 +175,10 @@ class Input {
           joyBase.classList.add('hidden');
         } else if (this._lookTouch && t.identifier === this._lookTouch.id) {
           this._lookTouch = null;
+        } else if (this._fireTouch && t.identifier === this._fireTouch.id) {
+          this._fireTouch = null;
+          this.firing = false;
+          document.getElementById('mc-fire').classList.remove('pressed');
         }
       }
     };
@@ -188,7 +200,19 @@ class Input {
       el.addEventListener('touchcancel', release);
     };
 
-    hold('mc-fire', () => { this.firing = true; }, () => { this.firing = false; });
+    // Fire button: press to shoot, drag the same thumb to aim while firing.
+    const fireBtn = document.getElementById('mc-fire');
+    fireBtn.addEventListener('touchstart', (e) => {
+      e.preventDefault(); e.stopPropagation();
+      fireBtn.classList.add('pressed');
+      this.onAnyGesture?.();
+      if (!this._fireTouch) {
+        const t = e.changedTouches[0];
+        this._fireTouch = { id: t.identifier, x: t.clientX, y: t.clientY };
+      }
+      this.firing = true;
+    }, { passive: false });
+
     hold('mc-jump', () => { this.jumpQueued = true; });
     hold('mc-reload', () => { this.reloadQueued = true; });
     hold('mc-nade', () => { this.nadeQueued = true; });
