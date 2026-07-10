@@ -2,7 +2,8 @@
 
 import * as THREE from 'three';
 import { CONFIG } from './config.js';
-import { buildWorld } from './world.js';
+import { World } from './world.js';
+import { MAP_LIST } from './maps.js';
 import { Player } from './player.js';
 import { Weapon } from './weapon.js';
 import { EnemyManager } from './enemy.js';
@@ -45,7 +46,10 @@ const weaponUnlocked = (w) => totalKills >= w.unlockKills;
 if (!weaponUnlocked(weaponStats(selectedWeaponId))) selectedWeaponId = 'volt';
 
 // ---------- World & actors ----------
-const world = buildWorld(scene, { shadows: true });
+let selectedMapId = localStorage.getItem('voltage.map') || 'arena';
+if (!MAP_LIST.some((m) => m.id === selectedMapId)) selectedMapId = 'arena';
+const world = new World(scene, { shadows: true });
+world.load(selectedMapId);
 const effects = new Effects(scene);
 const player = new Player(camera, world.colliders);
 const weapon = new Weapon(camera, effects, world.colliders, weaponStats(selectedWeaponId));
@@ -54,7 +58,7 @@ const pickups = new Pickups(scene, effects, world.colliders);
 const grenades = new Grenades(scene, effects, world.colliders, enemies);
 const hazard = new LaserSweep(scene, world.colliders);
 const hud = new HUD();
-const duel = new Duel({ scene, effects, player, weapon, grenades, hud });
+const duel = new Duel({ scene, effects, player, weapon, grenades, hud, world });
 
 // ---------- Game state ----------
 const State = { MENU: 'menu', PLAYING: 'playing', PAUSED: 'paused', DEAD: 'dead', DUEL_LOBBY: 'duellobby', RESULT: 'result' };
@@ -192,6 +196,45 @@ function refreshWeaponMenu() {
 }
 refreshWeaponMenu();
 
+// ---------- Map select ----------
+function mapCardHTML(m, selected) {
+  return `
+    <div class="map-swatch" style="background:linear-gradient(135deg, ${m.swatch[0]}, ${m.swatch[1]})"></div>
+    <div><div class="map-name">${m.name}</div><div class="map-desc">${m.desc}</div></div>`;
+}
+
+function buildMapSelect(containerId, onPick) {
+  const el = $(containerId);
+  const refresh = () => {
+    el.innerHTML = '';
+    for (const m of MAP_LIST) {
+      const card = document.createElement('button');
+      card.className = 'map-card' + (m.id === selectedMapId ? ' selected' : '');
+      card.innerHTML = mapCardHTML(m);
+      card.addEventListener('click', () => {
+        audio.init();
+        selectedMapId = m.id;
+        localStorage.setItem('voltage.map', selectedMapId);
+        onPick?.(m.id);
+        refreshMapSelects();
+        audio.ui();
+      });
+      el.appendChild(card);
+    }
+  };
+  return refresh;
+}
+
+const refreshSoloMaps = buildMapSelect('map-select', (id) => {
+  if (state === State.MENU) {
+    world.load(id);
+    hazard.setMapEnabled(world.hazardEnabled);
+  }
+});
+const refreshDuelMaps = buildMapSelect('duel-map-select', null);
+function refreshMapSelects() { refreshSoloMaps(); refreshDuelMaps(); }
+refreshMapSelects();
+
 // ---------- Local leaderboard ----------
 function loadRuns() {
   try { return JSON.parse(localStorage.getItem('voltage.runs') || '[]'); }
@@ -278,6 +321,7 @@ function startRun() {
   enemies.beginWave(waveConfig(1), player.position);
   pickups.clear();
   grenades.reset();
+  hazard.setMapEnabled(world.hazardEnabled);
   hazard.setWave(1);
   effects.clear();
   hud.reset();
@@ -313,6 +357,7 @@ function goToMenu() {
   enemies.beginWave({ types: Array(5).fill('drone'), maxAlive: 5 }, new THREE.Vector3(0, 0, 0));
   pickups.clear();
   grenades.reset();
+  hazard.setMapEnabled(world.hazardEnabled);
   hazard.stop();
   effects.clear();
   refreshWeaponMenu();
@@ -395,12 +440,27 @@ function syncDuelUI(active) {
   $('duel-score').classList.toggle('hidden', !active);
 }
 
+let selectedMode = '1v1';
+const modeBtns = [...document.querySelectorAll('.mode-btn')];
+for (const btn of modeBtns) {
+  btn.addEventListener('click', () => {
+    audio.init();
+    selectedMode = btn.dataset.mode;
+    for (const b of modeBtns) b.classList.toggle('selected', b === btn);
+    audio.ui();
+  });
+}
+
+const btnStartMatch = $('btn-start-match');
+btnStartMatch.addEventListener('click', clickAnd(() => duel.startMatch()));
+
 $('btn-duel').addEventListener('click', clickAnd(() => {
-  duelStatus.textContent = "HOST A MATCH OR ENTER A RIVAL'S CODE";
+  duelStatus.textContent = 'HOST A MATCH OR ENTER A CODE';
   resetDiag();
+  btnStartMatch.classList.add('hidden');
   setState(State.DUEL_LOBBY);
 }));
-$('btn-host').addEventListener('click', clickAnd(() => duel.hostMatch()));
+$('btn-host').addEventListener('click', clickAnd(() => duel.hostMatch(selectedMode, selectedMapId)));
 $('btn-join').addEventListener('click', clickAnd(() => duel.joinMatch($('duel-code').value)));
 $('duel-code').addEventListener('keydown', (e) => {
   e.stopPropagation(); // don't trigger game keys while typing
@@ -422,18 +482,28 @@ duel.onDiag = (line) => {
   duelDiag.scrollTop = duelDiag.scrollHeight;
 };
 
-duel.onMatchStart = () => {
+duel.onLobby = (count, max, isHost) => {
+  btnStartMatch.classList.toggle('hidden', !isHost || count < 2 || duel.active);
+  btnStartMatch.textContent = `START MATCH (${count}/${max})`;
+};
+
+duel.onMatchStart = (mapId, mode) => {
   goFullscreen();
+  world.load(mapId);            // everyone plays the host's map
+  hazard.setMapEnabled(false);  // no laser in PvP
   boostT = 0;
   slowmoT = 0;
   deathCamT = 0;
   weapon.damageMult = 1;
   enemies.clearAll();
   pickups.clear();
-  hazard.stop();
   effects.clear();
   hud.reset();
   hud.setAmmo(weapon.ammo, false);
+  // Team modes read as squads, 1v1 keeps the old labels.
+  const labels = document.querySelectorAll('#duel-score .ds-label');
+  labels[0].textContent = mode === '1v1' ? 'YOU' : 'ALLIES';
+  labels[1].textContent = mode === '1v1' ? 'RIVAL' : 'ENEMIES';
   syncDuelUI(true);
   setState(State.PLAYING);
   if (!isTouchDevice) input.requestLock(document.body);
@@ -452,7 +522,9 @@ duel.onMatchEnd = (won, reason) => {
   $('result-sub').textContent = reason || '';
   $('result-me').textContent = duel.killsMe;
   $('result-them').textContent = duel.killsThem;
-  $('btn-rematch').disabled = !duel.net.connected;
+  const canRematch = duel.net.isHost && duel.net.connected;
+  $('btn-rematch').disabled = !canRematch;
+  $('btn-rematch').textContent = duel.net.isHost ? 'REMATCH' : 'HOST DECIDES REMATCH';
   setState(State.RESULT);
   if (won) audio.waveClear(); else audio.playerHurt();
 };
@@ -704,6 +776,7 @@ function frame(now) {
     if (state === State.MENU || state === State.DUEL_LOBBY) enemies.update(dt, player);
   }
 
+  world.update(dt, player.position); // ambient weather follows the player
   effects.update(dt, camera, innerWidth, innerHeight);
   renderer.render(scene, camera);
 }
@@ -722,6 +795,7 @@ window.__game = {
 };
 
 applyGraphics();
+hazard.setMapEnabled(world.hazardEnabled);
 
 // Menu backdrop: a few idle drones wandering the arena.
 player.respawn(world.playerSpawn);

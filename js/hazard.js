@@ -54,14 +54,21 @@ export class LaserSweep {
   }
 
   _setVisible(v) {
-    this.beam.visible = v;
-    this.emitter.visible = true; // pylon always shows; emitter glows when armed
+    this.beam.visible = v && this.mapEnabled !== false;
     this.emitter.material.color.setHex(v ? 0xff2040 : 0x5a2830);
+  }
+
+  // Some maps have no laser pylon at all — hide everything there.
+  setMapEnabled(on) {
+    this.mapEnabled = on;
+    this.pylon.visible = on;
+    this.emitter.visible = on;
+    if (!on) this.stop();
   }
 
   // Called at the start of each wave (and from goToMenu with wave 0).
   setWave(waveNumber) {
-    const on = waveNumber >= H.startWave;
+    const on = waveNumber >= H.startWave && this.mapEnabled !== false;
     if (on && !this.active) this.angle = Math.random() * Math.PI * 2;
     this.active = on;
     this.warmup = on ? H.warmup : 0;

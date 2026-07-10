@@ -1,6 +1,6 @@
 # ⚡ VOLTAGE — Arena FPS
 
-A complete, polished browser first-person shooter. One arena, six weapons, endless drone waves — plus 1v1 online duels. Built with vanilla JavaScript and Three.js — no build step, no dependencies to install.
+A complete, polished browser first-person shooter. Three distinct maps, six weapons, endless drone waves — plus 1v1, 2v2, and 4v4 online multiplayer. Built with vanilla JavaScript and Three.js — no build step, no dependencies to install.
 
 **Play it:** open `index.html` via any static server, or deploy the repo to Vercel as-is.
 
@@ -14,7 +14,8 @@ A complete, polished browser first-person shooter. One arena, six weapons, endle
 - A rotating laser hazard sweeps the arena from wave 4 — duck behind cover or take high ground
 - Local top-5 leaderboard on the death screen; weapon cards show damage/rate/range stat bars
 - Juice: boss-kill slow-mo, low-health heartbeat, death camera
-- **1v1 online duels** — peer-to-peer over WebRTC (PeerJS): host a match, share the 4-letter code, first to 10 kills; countdown, respawns, rematch, and disconnect-forfeit handling. No accounts, no game server
+- **Online multiplayer: 1v1, 2v2, 4v4** — peer-to-peer over WebRTC (PeerJS) with the host relaying for team modes: host picks mode + map, shares the 4-letter code, teams auto-balance by join order; first team to 10/15/25 kills; ally markers, friendly-fire blocking, countdown, respawns, host rematch, and disconnect handling. No accounts, no game server
+- **Three maps with their own identities**: VOLT ARENA (dusk industrial, laser hazard), GLACIER (bright arctic station with falling snow, ice spikes, a frozen pond, radar dome), and EMBERFALL (night volcanic foundry with glowing lava channels, obsidian columns, rising embers)
 - Desktop **and** mobile: pointer-lock mouse aim + WASD, or virtual joystick + swipe look + touch buttons (auto-detected)
 - Minimal modern HUD: health, ammo, kills, streaks, dynamic crosshair, directional damage indicators
 - Procedural Web Audio sound effects — zero audio assets

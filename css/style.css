@@ -503,6 +503,49 @@ body.duel #btn-restart { display: none; }
 .lb-wave { color: var(--text); }
 .lb-wpn { color: var(--text-dim); margin-left: auto; font-size: 11px; letter-spacing: 1px; }
 
+/* --- Map select --- */
+#map-select, #duel-map-select {
+  display: flex; gap: 10px; justify-content: center; flex-wrap: wrap;
+  margin-bottom: 4px;
+}
+.map-card {
+  min-width: 118px;
+  padding: 9px 12px;
+  border-radius: 10px;
+  border: 1.5px solid rgba(255,255,255,.14);
+  cursor: pointer;
+  text-align: left;
+  font-family: var(--font);
+  color: var(--text);
+  background: rgba(255,255,255,.05);
+  display: flex; align-items: center; gap: 9px;
+  transition: transform .12s, border-color .15s;
+}
+.map-card:hover { transform: translateY(-1px); }
+.map-card .map-swatch {
+  width: 26px; height: 26px; border-radius: 6px;
+  border: 1px solid rgba(255,255,255,.25);
+  flex: none;
+}
+.map-card .map-name { font-size: 12px; font-weight: 900; letter-spacing: 1.5px; }
+.map-card .map-desc { font-size: 8.5px; letter-spacing: 1px; color: var(--text-dim); margin-top: 2px; }
+.map-card.selected { border-color: var(--accent); background: rgba(255,181,46,.12); }
+
+/* --- Mode buttons --- */
+#mode-row { display: flex; gap: 10px; }
+.mode-btn {
+  min-width: 72px;
+  padding: 10px 0;
+  font-family: var(--font);
+  font-size: 15px; font-weight: 900; letter-spacing: 2px;
+  color: var(--text);
+  background: rgba(255,255,255,.06);
+  border: 1.5px solid rgba(255,255,255,.16);
+  border-radius: 10px;
+  cursor: pointer;
+}
+.mode-btn.selected { border-color: var(--cyan); background: rgba(77,232,255,.14); color: #fff; }
+
 /* --- Settings (pause menu) --- */
 .settings-block {
   display: flex; flex-direction: column; gap: 12px;

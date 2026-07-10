@@ -1,5 +1,8 @@
-// 1v1 duel: lobby, message protocol, remote presentation, score, respawns.
-// Authority: each client owns its position/health; the shooter judges hits.
+// PvP match manager: 1v1 / 2v2 / 4v4 team deathmatch over a host-relayed
+// star network. Slots: host = 0, joiners 1..N-1. Teams are assigned by
+// join order at match start (alternating), so they stay balanced even if
+// someone left the lobby. Authority: each client owns its own position and
+// health; the shooter judges hits and sends damage events.
 
 import * as THREE from 'three';
 import { CONFIG } from './config.js';
@@ -7,89 +10,143 @@ import { Net } from './net.js';
 import { RemotePlayer } from './remote.js';
 import { audio } from './audio.js';
 
-const KILL_TARGET = 10;
+export const MODES = {
+  '1v1': { players: 2, target: 10 },
+  '2v2': { players: 4, target: 15 },
+  '4v4': { players: 8, target: 25 },
+};
+
 const RESPAWN_DELAY = 2.5;
 const SEND_INTERVAL = 0.05; // 20 Hz
-const PEER_TIMEOUT_MS = 8000; // no packets for this long → rival is gone
+const PEER_TIMEOUT_MS = 8000;
 const G = CONFIG.grenade;
 
-const DUEL_SPAWNS = [
-  new THREE.Vector3(0, 0.91, -24), new THREE.Vector3(0, 0.91, 24),
-  new THREE.Vector3(-24, 0.91, 0), new THREE.Vector3(24, 0.91, 0),
-  new THREE.Vector3(-22, 0.91, -22), new THREE.Vector3(22, 0.91, 22),
-];
-
 export class Duel {
-  constructor({ scene, effects, player, weapon, grenades, hud }) {
+  constructor({ scene, effects, player, weapon, grenades, hud, world }) {
+    this.scene = scene;
     this.effects = effects;
     this.player = player;
     this.weapon = weapon;
     this.grenades = grenades;
     this.hud = hud;
+    this.world = world;
 
     this.net = new Net();
-    this.remote = new RemotePlayer(scene, effects);
 
-    this.active = false;        // match running
+    this.mode = '1v1';
+    this.mapId = 'arena';
+    this.mySlot = 0;
+    this.roster = new Map();     // slot → team (during a match)
+    this.players = new Map();    // slot → RemotePlayer (everyone but me)
+
+    this.active = false;
     this.countdown = 0;
-    this.killsMe = 0;
-    this.killsThem = 0;
-    this.respawnT = 0;          // local respawn countdown, 0 = alive
+    this.scores = [0, 0];
+    this.respawnT = 0;
     this._sendT = 0;
-    this._rematchMe = false;
-    this._rematchThem = false;
     this._lastBanner = -1;
+    this._lastAttacker = -1;
+    this._lastHostRecv = 0;
+    this._peerRecv = new Map();  // host: slot → last packet time
 
     // Set by main:
-    this.onStatus = null;       // cb(text) — lobby status line
-    this.onDiag = null;         // cb(line) — diagnostic log line
-    this.onMatchStart = null;
-    this.onMatchEnd = null;     // cb(won, reason)
-    this.onScore = null;        // cb(me, them)
-    this.onLeft = null;         // opponent gone → back to menu
+    this.onStatus = null;
+    this.onDiag = null;
+    this.onLobby = null;         // cb(count, max, isHost) — lobby roster changed
+    this.onMatchStart = null;    // cb(mapId, mode) — load world BEFORE spawns are read
+    this.onMatchEnd = null;      // cb(won, reason)
+    this.onScore = null;         // cb(myTeamKills, enemyTeamKills)
+    this.onLeft = null;
 
-    this.net.onOpen = () => {
-      if (this.net.isHost) this.onStatus?.(`CODE: ${this.net.code} — WAITING FOR RIVAL…`);
-    };
-    this.net.onConnected = () => {
-      this.onStatus?.('RIVAL CONNECTED');
-      if (this.net.isHost) {
-        this.net.send({ t: 'start' });
-        this._startMatch();
-      }
-    };
-    this.net.onDiag = (line) => this.onDiag?.(line);
-    this.net.onMessage = (m) => this._handle(m);
-    this.net.onClosed = () => this._opponentGone('RIVAL DISCONNECTED');
-    this.net.onError = (msg) => {
-      if (this.active) this._opponentGone(msg);
-      else this.onStatus?.(msg);
-    };
+    this._wireNet();
 
-    // Weapon target adapter — plugs into weapon.update in place of the AI manager.
+    // Weapon target adapter — replaces the AI manager in PvP.
     const self = this;
     this.targets = {
       raycast(origin, dir, maxDist) {
-        if (!self.remote.alive) return null;
         let best = null;
-        for (const s of self.remote.raySpheres()) {
-          const d = raySphere(origin, dir, s);
-          if (d < maxDist && (!best || d < best.dist)) best = { enemy: 'rival', dist: d, crit: s.crit };
+        for (const [slot, rp] of self.players) {
+          if (!rp.alive || self.teamOf(slot) === self.myTeam) continue;
+          for (const s of rp.raySpheres()) {
+            const d = raySphere(origin, dir, s);
+            if (d < maxDist && (!best || d < best.dist)) best = { enemy: slot, dist: d, crit: s.crit };
+          }
         }
         return best;
       },
-      applyDamage(_target, dmg, _point, crit) {
-        self.net.send({ t: 'hit', d: Math.round(dmg), c: !!crit });
+      applyDamage(slot, dmg, _point, crit) {
+        self._send({ t: 'hit', target: slot, d: Math.round(dmg), c: !!crit });
         return 'damaged';
       },
     };
   }
 
+  get myTeam() { return this.roster.get(this.mySlot) ?? 0; }
+  teamOf(slot) { return this.roster.get(slot) ?? 0; }
+  get killTarget() { return MODES[this.mode].target; }
+  get killsMe() { return this.scores[this.myTeam]; }
+  get killsThem() { return this.scores[1 - this.myTeam]; }
+
+  _wireNet() {
+    const n = this.net;
+    n.onDiag = (line) => this.onDiag?.(line);
+    n.onError = (msg) => {
+      if (this.active) this._matchBroken(msg);
+      else this.onStatus?.(msg);
+    };
+
+    // ---- Host events ----
+    n.onOpen = () => {
+      if (!n.isHost) return;
+      this.onStatus?.(`CODE: ${n.code} — WAITING FOR PLAYERS…`);
+      this.onLobby?.(n.playerCount, MODES[this.mode].players, true);
+    };
+    n.onPeerJoined = (slot) => {
+      n.sendToSlot(slot, { t: 'welcome', slot, mode: this.mode, map: this.mapId, count: n.playerCount });
+      n.broadcast({ t: 'lobby', count: n.playerCount });
+      this.onStatus?.(`CODE: ${n.code} — ${n.playerCount}/${MODES[this.mode].players} PLAYERS`);
+      this.onLobby?.(n.playerCount, MODES[this.mode].players, true);
+      if (!this.active && n.playerCount === MODES[this.mode].players) this.startMatch();
+    };
+    n.onPeerLeft = (slot) => {
+      this._peerRecv.delete(slot);
+      if (this.active) {
+        const m = { t: 'left', slot };
+        n.broadcast(m);
+        this._process(m);
+      } else {
+        n.broadcast({ t: 'lobby', count: n.playerCount });
+        this.onStatus?.(`CODE: ${n.code} — ${n.playerCount}/${MODES[this.mode].players} PLAYERS`);
+        this.onLobby?.(n.playerCount, MODES[this.mode].players, true);
+      }
+    };
+    n.onPeerMessage = (slot, m) => {
+      this._peerRecv.set(slot, performance.now());
+      if (m.t === 'bye') { n.dropSlot(slot); n.onPeerLeft?.(slot); return; }
+      m.from = slot;
+      n.broadcast(m, slot); // relay to everyone else
+      this._process(m);
+    };
+
+    // ---- Client events ----
+    n.onConnectedToHost = () => {
+      this._lastHostRecv = performance.now();
+      this.onStatus?.('CONNECTED — WAITING FOR HOST TO START');
+    };
+    n.onHostMessage = (m) => {
+      this._lastHostRecv = performance.now();
+      this._process(m);
+    };
+    n.onHostLost = () => this._matchBroken('HOST DISCONNECTED');
+  }
+
   // ---- Lobby ----
 
-  hostMatch() {
+  hostMatch(mode, mapId) {
+    this.mode = mode;
+    this.mapId = mapId;
     this.onStatus?.('CONTACTING MATCH SERVER…');
-    return this.net.host(); // code shown once the server confirms (onOpen)
+    return this.net.host(MODES[mode].players);
   }
 
   joinMatch(code) {
@@ -98,202 +155,306 @@ export class Duel {
     this.net.join(code);
   }
 
-  cancelLobby() {
-    this.net.destroy();
-  }
+  cancelLobby() { this.net.destroy(); }
 
   leave() {
-    this.net.send({ t: 'bye' });
+    if (this.net.isHost) this.net.broadcast({ t: 'bye' });
+    else this.net.sendToHost({ t: 'bye' });
     this.net.destroy();
     this.active = false;
-    this.remote.hide();
+    this._clearAvatars();
+  }
+
+  _clearAvatars() {
+    for (const rp of this.players.values()) rp.hide();
   }
 
   // ---- Match flow ----
 
-  _startMatch() {
-    this.active = true;
-    this.killsMe = 0;
-    this.killsThem = 0;
-    this.respawnT = 0;
-    this.countdown = 3;
-    this._rematchMe = false;
-    this._rematchThem = false;
-    this._lastBanner = -1;
-    this._lastRecv = performance.now();
-
-    // Host takes spawn 0, joiner spawn 1 — opposite ends.
-    const mySpawn = DUEL_SPAWNS[this.net.isHost ? 0 : 1];
-    const theirSpawn = DUEL_SPAWNS[this.net.isHost ? 1 : 0];
-    this.player.respawn(mySpawn);
-    this.weapon.reset();
-    this.weapon.damageMult = 1;
-    this.grenades.reset();
-    this.remote.show(theirSpawn);
-    this.onScore?.(0, 0);
-    this.onMatchStart?.();
+  // Host: assign balanced teams by join order and start everyone.
+  startMatch() {
+    if (!this.net.isHost || this.net.playerCount < 2) return;
+    const slots = [0, ...[...this.net.conns.keys()].sort((a, b) => a - b)];
+    const roster = slots.map((slot, i) => [slot, i % 2]);
+    this.net.broadcast({ t: 'start', roster, map: this.mapId, mode: this.mode });
+    this._beginLocal(roster, this.mapId, this.mode);
   }
 
   requestRematch() {
-    this._rematchMe = true;
-    this.net.send({ t: 'rematch' });
-    this.onStatus?.('WAITING FOR RIVAL…');
-    this._maybeRematch();
+    if (this.net.isHost) this.startMatch();
   }
 
-  _maybeRematch() {
-    if (this._rematchMe && this._rematchThem) this._startMatch();
+  _beginLocal(rosterArr, mapId, mode) {
+    this.mode = mode;
+    this.mapId = mapId;
+    this.roster = new Map(rosterArr);
+    this.active = true;
+    this.scores = [0, 0];
+    this.respawnT = 0;
+    this.countdown = 3;
+    this._lastBanner = -1;
+    this._lastAttacker = -1;
+    this._lastHostRecv = performance.now();
+    this._peerRecv.clear();
+    for (const [slot] of this.roster) {
+      if (slot !== this.mySlot) this._peerRecv.set(slot, performance.now());
+    }
+
+    // Main loads the world for mapId here (spawns must be fresh below).
+    this.onMatchStart?.(mapId, mode);
+
+    // Avatars for everyone else, tinted by team, at their team spawn.
+    const teamIdx = [0, 0];
+    const spawnOf = (team) => {
+      const list = this.world.teamSpawns[team];
+      return list[(teamIdx[team]++) % list.length];
+    };
+    this._clearAvatars();
+    let mySpawn = null;
+    for (const [slot, team] of this.roster) {
+      if (slot === this.mySlot) { mySpawn = spawnOf(team); continue; }
+      let rp = this.players.get(slot);
+      if (!rp) { rp = new RemotePlayer(this.scene, this.effects); this.players.set(slot, rp); }
+      rp.setTeamLook(team === this.myTeam);
+      rp.show(spawnOf(team));
+    }
+    // Drop avatars for slots not in this roster.
+    for (const [slot, rp] of this.players) {
+      if (!this.roster.has(slot)) rp.hide();
+    }
+
+    this.player.respawn(mySpawn || this.world.teamSpawns[this.myTeam][0]);
+    this.weapon.reset();
+    this.weapon.damageMult = 1;
+    this.grenades.reset();
+    this.onScore?.(0, 0);
   }
 
-  _endMatch(won) {
+  _endMatch(won, reason) {
     this.active = false;
-    this.remote.hide();
-    this.onMatchEnd?.(won, won ? 'TARGET REACHED' : null);
+    this._clearAvatars();
+    this.onMatchEnd?.(won, reason || null);
   }
 
-  _opponentGone(reason) {
+  _matchBroken(reason) {
     const wasActive = this.active;
     this.active = false;
-    this.remote.hide();
+    this._clearAvatars();
     this.net.destroy();
     if (wasActive) this.onMatchEnd?.(true, reason);
     else this.onLeft?.(reason);
   }
 
-  // Local player died (called from main when health hits 0 in duel mode).
   onLocalDeath() {
-    this.killsThem++;
+    const by = this._lastAttacker >= 0 ? this._lastAttacker : this._anyEnemySlot();
+    this.scores[this.teamOf(by)]++;
     this.onScore?.(this.killsMe, this.killsThem);
-    this.net.send({ t: 'died' });
-    if (this.killsThem >= KILL_TARGET) { this._endMatch(false); return; }
+    this._send({ t: 'died', by });
+    if (this.scores[this.teamOf(by)] >= this.killTarget) {
+      this._endMatch(this.teamOf(by) === this.myTeam, null);
+      return;
+    }
     this.respawnT = RESPAWN_DELAY;
     this.hud.waveBannerShow('ELIMINATED', 'RESPAWNING…');
   }
 
-  // My grenade exploded at pos — judge AoE vs the rival.
+  _anyEnemySlot() {
+    for (const [slot, team] of this.roster) if (team !== this.myTeam) return slot;
+    return 0;
+  }
+
   explodeAt(pos) {
-    if (!this.active || !this.remote.alive) return;
-    const d = this.remote.position.distanceTo(pos);
-    if (d > G.radius) return;
-    const dmg = Math.round(G.damageCenter + (G.damageEdge - G.damageCenter) * (d / G.radius));
-    this.net.send({ t: 'hit', d: dmg, c: false });
-    this.effects.damageNumber(this.remote.position.clone(), dmg, false);
+    if (!this.active) return;
+    for (const [slot, rp] of this.players) {
+      if (!rp.alive || this.teamOf(slot) === this.myTeam) continue;
+      const d = rp.position.distanceTo(pos);
+      if (d > G.radius) continue;
+      const dmg = Math.round(G.damageCenter + (G.damageEdge - G.damageCenter) * (d / G.radius));
+      this._send({ t: 'hit', target: slot, d: dmg, c: false });
+      this.effects.damageNumber(rp.position.clone(), dmg, false);
+    }
   }
 
   notifyFired(hitPoint) {
-    this.net.send({ t: 'fire', to: [r2(hitPoint.x), r2(hitPoint.y), r2(hitPoint.z)] });
+    this._send({ t: 'fire', to: [r2(hitPoint.x), r2(hitPoint.y), r2(hitPoint.z)] });
   }
 
   notifyNade(origin, dir) {
-    this.net.send({
+    this._send({
       t: 'nade',
       p: [r2(origin.x), r2(origin.y), r2(origin.z)],
       d: [r2(dir.x), r2(dir.y), r2(dir.z)],
     });
   }
 
-  _handle(m) {
-    this._lastRecv = performance.now();
+  // Send a message to the whole match (host stamps + broadcasts; client → host relays).
+  _send(m) {
+    if (this.net.isHost) {
+      m.from = this.mySlot;
+      this.net.broadcast(m);
+    } else {
+      this.net.sendToHost(m);
+    }
+  }
+
+  _process(m) {
     switch (m.t) {
+      case 'welcome':
+        this.mySlot = m.slot;
+        this.mode = m.mode;
+        this.mapId = m.map;
+        this.onStatus?.(`JOINED ${this.net.code} — ${m.count}/${MODES[m.mode].players} PLAYERS`);
+        this.onLobby?.(m.count, MODES[m.mode].players, false);
+        break;
+      case 'lobby':
+        if (!this.active) {
+          this.onStatus?.(`IN LOBBY — ${m.count}/${MODES[this.mode].players} PLAYERS`);
+          this.onLobby?.(m.count, MODES[this.mode].players, this.net.isHost);
+        }
+        break;
+      case 'full':
+        this.onStatus?.('MATCH IS FULL');
+        break;
       case 'start':
-        if (!this.net.isHost) this._startMatch();
+        if (!this.net.isHost) this._beginLocal(m.roster, m.map, m.mode);
         break;
       case 's':
-        this.remote.pushSnapshot(m);
+        this.players.get(m.from)?.pushSnapshot(m);
         break;
-      case 'fire':
-        this.remote.showShot(m.to);
-        audio.enemyShoot();
-        break;
-      case 'hit': {
-        if (!this.active || !this.player.alive) break;
-        this.player.takeDamage(m.d);
-        this.hud.showDamageFrom(Math.atan2(
-          this.player.position.x - this.remote.position.x,
-          this.player.position.z - this.remote.position.z
-        ));
+      case 'fire': {
+        const rp = this.players.get(m.from);
+        if (rp?.alive) { rp.showShot(m.to); audio.enemyShoot(); }
         break;
       }
-      case 'died':
-        this.killsMe++;
-        this.onScore?.(this.killsMe, this.killsThem);
-        this.remote.die();
-        this.hud.hitmark('kill');
-        audio.kill();
-        if (this.killsMe >= KILL_TARGET) this._endMatch(true);
-        break;
-      case 'spawn':
-        this.remote.position.set(m.p[0], m.p[1], m.p[2]);
-        this.remote.show();
-        break;
       case 'nade':
         this.grenades.throwVisual(
           new THREE.Vector3(m.p[0], m.p[1], m.p[2]),
           new THREE.Vector3(m.d[0], m.d[1], m.d[2])
         );
         break;
-      case 'rematch':
-        this._rematchThem = true;
-        this._maybeRematch();
+      case 'hit': {
+        if (!this.active || m.target !== this.mySlot || !this.player.alive) break;
+        this._lastAttacker = m.from;
+        this.player.takeDamage(m.d);
+        const src = this.players.get(m.from);
+        if (src) {
+          this.hud.showDamageFrom(Math.atan2(
+            this.player.position.x - src.position.x,
+            this.player.position.z - src.position.z
+          ));
+        }
         break;
+      }
+      case 'died': {
+        const killerTeam = this.teamOf(m.by);
+        this.scores[killerTeam]++;
+        this.players.get(m.from)?.die();
+        if (m.by === this.mySlot) this.hud.hitmark('kill');
+        audio.kill();
+        this.onScore?.(this.killsMe, this.killsThem);
+        if (this.scores[killerTeam] >= this.killTarget) {
+          this._endMatch(killerTeam === this.myTeam, null);
+        }
+        break;
+      }
+      case 'spawn': {
+        const rp = this.players.get(m.from);
+        if (rp) {
+          rp.position.set(m.p[0], m.p[1], m.p[2]);
+          rp.show();
+        }
+        break;
+      }
+      case 'left': {
+        this._peerRecv.delete(m.slot);
+        this.players.get(m.slot)?.hide();
+        this.roster.delete(m.slot);
+        if (this.active && !this._hasEnemies()) this._endMatch(true, 'ALL RIVALS LEFT');
+        break;
+      }
       case 'bye':
-        this._opponentGone('RIVAL LEFT THE MATCH');
+        if (!this.net.isHost) this._matchBroken('HOST LEFT THE MATCH');
+        break;
+      case 'hb':
         break;
     }
   }
 
+  _hasEnemies() {
+    for (const [slot, team] of this.roster) {
+      if (slot !== this.mySlot && team !== this.myTeam) return true;
+    }
+    return false;
+  }
+
   update(dt) {
     if (!this.active) return;
+    const now = performance.now();
 
-    // Rival silent too long (crashed tab, dead link) → forfeit in our favor.
-    if (performance.now() - this._lastRecv > PEER_TIMEOUT_MS) {
-      this._opponentGone('RIVAL DISCONNECTED');
-      return;
+    // Liveness: clients watch the host; the host watches every peer.
+    if (!this.net.isHost) {
+      if (now - this._lastHostRecv > PEER_TIMEOUT_MS) { this._matchBroken('HOST DISCONNECTED'); return; }
+    } else {
+      for (const [slot, t] of this._peerRecv) {
+        if (now - t > PEER_TIMEOUT_MS) {
+          this.net.dropSlot(slot);
+          this._peerRecv.delete(slot);
+          const m = { t: 'left', slot };
+          this.net.broadcast(m);
+          this._process(m);
+        }
+      }
     }
+    if (!this.active) return;
 
-    // Countdown banner: 3‑2‑1‑FIGHT
+    // Countdown banner: 3-2-1-FIGHT
     if (this.countdown > 0) {
       this.countdown -= dt;
       const n = Math.ceil(Math.max(0, this.countdown));
       if (n !== this._lastBanner) {
         this._lastBanner = n;
-        this.hud.waveBannerShow(n > 0 ? String(n) : 'FIGHT', n > 0 ? `FIRST TO ${KILL_TARGET}` : '');
+        const modeLabel = `${this.mode.toUpperCase()} — FIRST TEAM TO ${this.killTarget}`;
+        this.hud.waveBannerShow(n > 0 ? String(n) : 'FIGHT', n > 0 ? modeLabel : '');
         if (n === 0) audio.waveStart(); else audio.ui();
       }
     }
 
-    this.remote.update(dt);
+    for (const rp of this.players.values()) rp.update(dt);
 
-    // Local respawn
+    // Local respawn — farthest team spawn from the nearest living enemy.
     if (this.respawnT > 0) {
       this.respawnT -= dt;
       if (this.respawnT <= 0) {
-        // Spawn far from the rival.
-        let best = DUEL_SPAWNS[0], bd = -1;
-        for (const s of DUEL_SPAWNS) {
-          const d = s.distanceToSquared(this.remote.position);
-          if (d > bd) { bd = d; best = s; }
+        const spawns = this.world.teamSpawns[this.myTeam];
+        let best = spawns[0], bd = -1;
+        for (const s of spawns) {
+          let nearest = Infinity;
+          for (const [slot, rp] of this.players) {
+            if (this.teamOf(slot) === this.myTeam || !rp.alive) continue;
+            nearest = Math.min(nearest, s.distanceToSquared(rp.position));
+          }
+          if (nearest > bd) { bd = nearest; best = s; }
         }
         this.player.respawn(best);
         this.weapon.reset();
-        this.net.send({ t: 'spawn', p: [best.x, best.y, best.z] });
+        this._send({ t: 'spawn', p: [best.x, best.y, best.z] });
       }
     }
 
-    // State broadcast @ 20 Hz (heartbeat while dead so the link stays proven).
+    // State broadcast @ 20 Hz (heartbeat while dead).
     this._sendT -= dt;
     if (this._sendT <= 0) {
       this._sendT = SEND_INTERVAL;
       if (this.player.alive) {
         const p = this.player.position;
-        this.net.send({
+        this._send({
           t: 's',
           p: [r2(p.x), r2(p.y), r2(p.z)],
           yw: r3(this.player.yaw),
           pt: r3(this.player.pitch),
         });
       } else {
-        this.net.send({ t: 'hb' });
+        this._send({ t: 'hb' });
       }
     }
   }

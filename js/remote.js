@@ -3,11 +3,15 @@
 
 import * as THREE from 'three';
 
-function buildAvatar() {
+function buildAvatar(isAlly) {
   const g = new THREE.Group();
-  const armor = new THREE.MeshStandardMaterial({ color: 0x8a4550, roughness: 0.5, metalness: 0.3 });
-  const dark = new THREE.MeshStandardMaterial({ color: 0x2b2230, roughness: 0.6, metalness: 0.3 });
-  const visor = new THREE.MeshBasicMaterial({ color: 0xff3040 });
+  const armor = new THREE.MeshStandardMaterial({
+    color: isAlly ? 0x3f5f82 : 0x8a4550, roughness: 0.5, metalness: 0.3,
+  });
+  const dark = new THREE.MeshStandardMaterial({
+    color: isAlly ? 0x222c3a : 0x2b2230, roughness: 0.6, metalness: 0.3,
+  });
+  const visor = new THREE.MeshBasicMaterial({ color: isAlly ? 0x4de8ff : 0xff3040 });
   const box = new THREE.BoxGeometry(1, 1, 1);
   const part = (mat, x, y, z, sx, sy, sz, parent = g) => {
     const m = new THREE.Mesh(box, mat);
@@ -41,19 +45,27 @@ function buildAvatar() {
   gun.add(muzzle);
   g.add(gun);
 
-  return { group: g, head, gun, muzzle };
+  // Allies get a floating marker so you never mistake them for hostiles.
+  let marker = null;
+  if (isAlly) {
+    marker = new THREE.Mesh(
+      new THREE.ConeGeometry(0.09, 0.16, 4),
+      new THREE.MeshBasicMaterial({ color: 0x4de8ff })
+    );
+    marker.rotation.x = Math.PI; // point down
+    marker.position.y = 1.1;
+    g.add(marker);
+  }
+
+  return { group: g, head, gun, muzzle, marker };
 }
 
 export class RemotePlayer {
   constructor(scene, effects) {
+    this.scene = scene;
     this.effects = effects;
-    const { group, head, gun, muzzle } = buildAvatar();
-    this.mesh = group;
-    this.head = head;
-    this.gun = gun;
-    this.muzzle = muzzle;
-    this.mesh.visible = false;
-    scene.add(this.mesh);
+    this.isAlly = false;
+    this._buildMesh(false);
 
     this.position = new THREE.Vector3();   // interpolated AABB center
     this.alive = false;
@@ -64,6 +76,28 @@ export class RemotePlayer {
     this._snaps = [];
     this._walkPhase = 0;
     this._v = new THREE.Vector3();
+  }
+
+  _buildMesh(isAlly) {
+    const wasVisible = this.mesh?.visible ?? false;
+    if (this.mesh) {
+      this.scene.remove(this.mesh);
+      this.mesh.traverse((o) => { if (o.isMesh) { o.geometry.dispose(); o.material.dispose(); } });
+    }
+    const { group, head, gun, muzzle, marker } = buildAvatar(isAlly);
+    this.mesh = group;
+    this.head = head;
+    this.gun = gun;
+    this.muzzle = muzzle;
+    this.marker = marker;
+    this.mesh.visible = wasVisible;
+    if (this.position) this.mesh.position.copy(this.position);
+    this.scene.add(this.mesh);
+    this.isAlly = isAlly;
+  }
+
+  setTeamLook(isAlly) {
+    if (isAlly !== this.isAlly) this._buildMesh(isAlly);
   }
 
   show(spawnPos) {
@@ -131,6 +165,11 @@ export class RemotePlayer {
     this.mesh.rotation.y = this.yaw;
     this.head.rotation.x = -this.pitch * 0.7;
     this.gun.rotation.x = -this.pitch;
+
+    if (this.marker) {
+      this.marker.position.y = 1.1 + Math.sin(performance.now() * 0.004) * 0.06;
+      this.marker.rotation.y += dt * 2;
+    }
 
     // Walk bob from actual horizontal motion.
     const speed = Math.hypot(this.position.x - prevX, this.position.z - prevZ) / Math.max(dt, 1e-4);
