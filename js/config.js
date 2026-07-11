@@ -73,33 +73,41 @@ export const CONFIG = {
 
   enemy: {
     maxAlive: 6,
-    detectRange: 26,
-    loseRange: 34,
-    burstInterval: 0.14,
-    projectileSpeed: 24,
-    projectileDamage: 11,
+    detectRange: 30,          // was 26 — spot campers sooner
+    loseRange: 40,            // was 34 — harder to break contact
+    burstInterval: 0.13,
+    projectileSpeed: 26,
+    projectileDamage: 12,
 
     // Per-type stats. `score` is the base kill reward.
     types: {
       drone: {
-        health: 100, hover: 1.55, wanderSpeed: 2.1, chaseSpeed: 4.4,
-        bodyRadius: 0.72, coreRadius: 0.3, canShoot: true,
-        attackRange: 21, preferredRange: 11,
-        burstCount: 3, burstCooldownMin: 1.1, burstCooldownMax: 2.0,
+        health: 100, hover: 1.55, wanderSpeed: 2.4, chaseSpeed: 5.6,
+        bodyRadius: 0.6, coreRadius: 0.28, canShoot: true,
+        attackRange: 24, preferredRange: 9,
+        burstCount: 3, burstCooldownMin: 0.9, burstCooldownMax: 1.7,
         score: 100,
+        // Anti-camp: periodically pick a flank angle to push the player.
+        flankChance: 0.35,
       },
       rusher: {
-        health: 45, hover: 1.0, wanderSpeed: 3.0, chaseSpeed: 7.2,
-        bodyRadius: 0.5, coreRadius: 0.22, canShoot: false,
-        detonateRange: 1.7, detonateDamage: 22,
+        health: 45, hover: 1.0, wanderSpeed: 3.2, chaseSpeed: 8.0,
+        bodyRadius: 0.45, coreRadius: 0.2, canShoot: false,
+        detonateRange: 1.7, detonateDamage: 26,
         score: 80,
       },
       boss: {
-        health: 850, hover: 2.3, wanderSpeed: 1.6, chaseSpeed: 2.4,
-        bodyRadius: 1.75, coreRadius: 0.6, canShoot: true,
-        attackRange: 27, preferredRange: 14,
-        burstCount: 5, burstCooldownMin: 0.9, burstCooldownMax: 1.5,
-        score: 600, meshScale: 2.5,
+        health: 1100, hover: 2.0, wanderSpeed: 2.0, chaseSpeed: 3.4,
+        bodyRadius: 1.25, coreRadius: 0.42, canShoot: true,
+        attackRange: 30, preferredRange: 12,
+        burstCount: 6, burstCooldownMin: 0.8, burstCooldownMax: 1.3,
+        score: 600, meshScale: 1.55,
+        // Special: radial plasma nova (bullet-hell ring).
+        novaCooldownMin: 5.5, novaCooldownMax: 8.0,
+        novaCount: 20, novaSpeed: 16, novaWindup: 1.1,
+        // AoE: ground slam when the player gets close.
+        slamRange: 9, slamRadius: 11, slamDamage: 42,
+        slamCooldown: 9, slamWindup: 1.0,
       },
     },
   },

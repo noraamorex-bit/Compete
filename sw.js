@@ -1,7 +1,7 @@
 // VOLTAGE service worker: precache the game, network-first so deploys are
 // picked up immediately, cache fallback keeps it playable offline.
 // Bump the version when assets change to evict stale caches.
-const CACHE = 'voltage-v11';
+const CACHE = 'voltage-v12';
 
 const CORE = [
   './',

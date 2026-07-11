@@ -8,82 +8,216 @@ import { clamp, damp, rand, raycastColliders, groundHeightAt, pointInAABB } from
 import { audio } from './audio.js';
 
 const E = CONFIG.enemy;
-const MAX_PROJECTILES = 40;
+const MAX_PROJECTILES = 72; // headroom for the boss nova ring
 const POOL_SIZE = 9; // >= max simultaneous alive + dying
 
 const STATE = { SPAWNING: 0, WANDER: 1, CHASE: 2, DYING: 3 };
 
-function buildDroneMesh({ scale = 1, shellColor = 0x9aa4b8, coreColor = 0xff5040 } = {}) {
-  const g = new THREE.Group();
-  const shell = new THREE.MeshStandardMaterial({ color: shellColor, roughness: 0.45, metalness: 0.35 });
-  const trim = new THREE.MeshStandardMaterial({ color: 0x39404f, roughness: 0.6, metalness: 0.3 });
-  const coreMat = new THREE.MeshBasicMaterial({ color: coreColor });
+// ---------- Enemy meshes ----------
+// Each build* returns { group, body, core, ring, spinners }.
+// `core` is the glowing weak-point (crit target + hit-flash tint), `ring`
+// and `body` get idle spin, `spinners` is extra animated parts [{mesh,ax,ay,az}].
 
-  const body = new THREE.Mesh(new THREE.OctahedronGeometry(0.52, 0), shell);
-  body.scale.set(1, 0.78, 1);
+// SENTINEL DRONE — an armored floating eye-turret: faceted hull with a menacing
+// single optic, side gun pods, a stabilizer halo, top antennae, thruster glow.
+function buildDroneMesh({ scale = 1, shellColor = 0x8992a6, coreColor = 0xff5040 } = {}) {
+  const g = new THREE.Group();
+  const shell = new THREE.MeshStandardMaterial({ color: shellColor, roughness: 0.5, metalness: 0.45 });
+  const dark = new THREE.MeshStandardMaterial({ color: 0x2a303c, roughness: 0.6, metalness: 0.4 });
+  const trim = new THREE.MeshStandardMaterial({ color: 0x454e5e, roughness: 0.55, metalness: 0.35 });
+  const coreMat = new THREE.MeshBasicMaterial({ color: coreColor });
+  const box = new THREE.BoxGeometry(1, 1, 1);
+
+  // Hull: a wide beveled diamond (two stacked frusta) — reads mechanical, not a blob.
+  const body = new THREE.Group();
+  const top = new THREE.Mesh(new THREE.ConeGeometry(0.5, 0.34, 6), shell);
+  top.position.y = 0.13;
+  const bot = new THREE.Mesh(new THREE.ConeGeometry(0.5, 0.4, 6), trim);
+  bot.rotation.x = Math.PI; bot.position.y = -0.14;
+  body.add(top, bot);
+  // Armor collar around the seam.
+  const collar = new THREE.Mesh(new THREE.CylinderGeometry(0.52, 0.52, 0.12, 6), dark);
+  body.add(collar);
   g.add(body);
 
-  const core = new THREE.Mesh(new THREE.IcosahedronGeometry(0.2, 0), coreMat);
-  core.position.z = 0.32;
+  // Optic housing + glowing eye on the front.
+  const brow = new THREE.Mesh(box, dark);
+  brow.scale.set(0.36, 0.16, 0.14); brow.position.set(0, 0.02, 0.4);
+  g.add(brow);
+  const core = new THREE.Mesh(new THREE.SphereGeometry(0.14, 12, 10), coreMat);
+  core.position.set(0, 0.02, 0.46);
+  core.scale.z = 0.7;
   g.add(core);
 
-  const ring = new THREE.Mesh(new THREE.TorusGeometry(0.62, 0.05, 6, 18), trim);
+  // Side gun pods.
+  for (const side of [-1, 1]) {
+    const pod = new THREE.Mesh(new THREE.CylinderGeometry(0.08, 0.1, 0.42, 6), dark);
+    pod.rotation.x = Math.PI / 2;
+    pod.position.set(side * 0.44, -0.02, 0.16);
+    g.add(pod);
+    const barrel = new THREE.Mesh(new THREE.CylinderGeometry(0.035, 0.035, 0.16, 6), trim);
+    barrel.rotation.x = Math.PI / 2;
+    barrel.position.set(side * 0.44, -0.02, 0.42);
+    g.add(barrel);
+  }
+
+  // Top antenna cluster.
+  for (const [x, h, rz] of [[-0.12, 0.28, 0.2], [0.12, 0.34, -0.2], [0, 0.4, 0]]) {
+    const ant = new THREE.Mesh(new THREE.CylinderGeometry(0.012, 0.02, h, 4), trim);
+    ant.position.set(x, 0.28 + h / 2, -0.06);
+    ant.rotation.z = rz;
+    g.add(ant);
+  }
+
+  // Stabilizer halo (spins).
+  const ring = new THREE.Mesh(new THREE.TorusGeometry(0.6, 0.045, 6, 20), trim);
   ring.rotation.x = Math.PI / 2;
   g.add(ring);
-
-  const finGeo = new THREE.BoxGeometry(0.1, 0.34, 0.5);
-  for (const side of [-1, 1]) {
-    const fin = new THREE.Mesh(finGeo, trim);
-    fin.position.set(side * 0.62, 0.12, 0.1);
-    fin.rotation.z = side * 0.5;
-    g.add(fin);
+  for (let i = 0; i < 3; i++) {
+    const node = new THREE.Mesh(new THREE.BoxGeometry(0.08, 0.08, 0.08), coreMat);
+    const a = (i / 3) * Math.PI * 2;
+    node.position.set(Math.cos(a) * 0.6, 0, Math.sin(a) * 0.6);
+    ring.add(node);
   }
+
+  // Underside thruster glow.
+  const thruster = new THREE.Mesh(new THREE.ConeGeometry(0.18, 0.3, 8), coreMat);
+  thruster.rotation.x = Math.PI; thruster.position.y = -0.42; thruster.scale.multiplyScalar(0.9);
+  thruster.material = new THREE.MeshBasicMaterial({ color: coreColor, transparent: true, opacity: 0.5, blending: THREE.AdditiveBlending, depthWrite: false });
+  g.add(thruster);
 
   g.scale.setScalar(scale);
   g.traverse((m) => { if (m.isMesh) m.castShadow = true; });
-  return { group: g, body, core, ring };
+  return { group: g, body, core, ring, spinners: [{ mesh: body, ax: 0, ay: 0.5, az: 0 }] };
 }
 
+// KAMIKAZE RUSHER — a spiked charging bomb-drone with an unstable pulsing core.
 function buildRusherMesh() {
   const g = new THREE.Group();
-  const shell = new THREE.MeshStandardMaterial({ color: 0x6e3440, roughness: 0.5, metalness: 0.3 });
-  const trim = new THREE.MeshStandardMaterial({ color: 0x2c1a20, roughness: 0.6, metalness: 0.3 });
+  const shell = new THREE.MeshStandardMaterial({ color: 0x7a2f38, roughness: 0.5, metalness: 0.35 });
+  const trim = new THREE.MeshStandardMaterial({ color: 0x35181e, roughness: 0.6, metalness: 0.3 });
   const coreMat = new THREE.MeshBasicMaterial({ color: 0xff3020 });
 
-  const body = new THREE.Mesh(new THREE.OctahedronGeometry(0.38, 0), shell);
-  body.scale.set(0.75, 1.15, 0.75);
+  // Faceted warhead body.
+  const body = new THREE.Mesh(new THREE.IcosahedronGeometry(0.32, 0), shell);
+  body.scale.set(0.85, 1.05, 0.85);
   g.add(body);
 
-  const core = new THREE.Mesh(new THREE.IcosahedronGeometry(0.17, 0), coreMat);
+  // Exposed unstable core.
+  const core = new THREE.Mesh(new THREE.IcosahedronGeometry(0.19, 0), coreMat);
   core.position.z = 0.24;
   g.add(core);
 
-  // Spikes make it read as dangerous.
-  const spikeGeo = new THREE.ConeGeometry(0.07, 0.3, 4);
-  for (const [x, y, rz] of [[-0.3, 0.1, 1.1], [0.3, 0.1, -1.1], [0, 0.45, 0]]) {
+  // Radial spikes — reads "do not touch".
+  const spikeGeo = new THREE.ConeGeometry(0.06, 0.28, 4);
+  for (let i = 0; i < 6; i++) {
+    const a = (i / 6) * Math.PI * 2;
     const s = new THREE.Mesh(spikeGeo, trim);
-    s.position.set(x, y, 0);
-    s.rotation.z = rz;
+    s.position.set(Math.cos(a) * 0.34, Math.sin(a) * 0.34, -0.05);
+    s.rotation.z = -a + Math.PI / 2;
     g.add(s);
   }
+  const nose = new THREE.Mesh(spikeGeo, trim);
+  nose.rotation.x = -Math.PI / 2; nose.position.z = 0.42; nose.scale.set(1.3, 1.3, 1.3);
+  g.add(nose);
 
-  const ring = new THREE.Mesh(new THREE.TorusGeometry(0.4, 0.04, 5, 14), trim);
+  const ring = new THREE.Mesh(new THREE.TorusGeometry(0.38, 0.04, 5, 14), trim);
   ring.rotation.x = Math.PI / 2;
   g.add(ring);
 
   g.traverse((m) => { if (m.isMesh) m.castShadow = true; });
-  return { group: g, body, core, ring };
+  return { group: g, body, core, ring, spinners: [{ mesh: body, ax: 0.6, ay: 0.6, az: 0 }] };
+}
+
+// OVERSEER BOSS — deliberately unlike the drone: a hovering war-platform with a
+// segmented orbital shell, four radial weapon arms, a spiked crown, and a large
+// central plasma eye (the weak point). Compact enough that cover matters.
+function buildBossMesh() {
+  const g = new THREE.Group();
+  const armor = new THREE.MeshStandardMaterial({ color: 0x5b4a72, roughness: 0.5, metalness: 0.45 });
+  const armorDark = new THREE.MeshStandardMaterial({ color: 0x2c2438, roughness: 0.55, metalness: 0.4 });
+  const trim = new THREE.MeshStandardMaterial({ color: 0x8a6ab0, roughness: 0.45, metalness: 0.5 });
+  const coreMat = new THREE.MeshBasicMaterial({ color: 0xff2040 });
+  const box = new THREE.BoxGeometry(1, 1, 1);
+
+  // Central housing (dodecahedron) — the "head".
+  const body = new THREE.Mesh(new THREE.DodecahedronGeometry(0.52, 0), armor);
+  g.add(body);
+
+  // Big plasma eye set into the front — crit weak point.
+  const socket = new THREE.Mesh(new THREE.CylinderGeometry(0.3, 0.34, 0.18, 8), armorDark);
+  socket.rotation.x = Math.PI / 2; socket.position.z = 0.42;
+  g.add(socket);
+  const core = new THREE.Mesh(new THREE.SphereGeometry(0.26, 16, 12), coreMat);
+  core.position.z = 0.5; core.scale.z = 0.7;
+  g.add(core);
+
+  // Orbital shell: split armor plates on a spinning ring.
+  const ring = new THREE.Group();
+  const plateGeo = new THREE.TorusGeometry(0.95, 0.12, 8, 6, Math.PI / 2.4);
+  for (let i = 0; i < 4; i++) {
+    const plate = new THREE.Mesh(plateGeo, armor);
+    plate.rotation.x = Math.PI / 2;
+    plate.rotation.z = (i / 4) * Math.PI * 2;
+    ring.add(plate);
+    const lamp = new THREE.Mesh(new THREE.SphereGeometry(0.07, 8, 6), coreMat);
+    const a = (i / 4) * Math.PI * 2 + Math.PI / 4;
+    lamp.position.set(Math.cos(a) * 0.95, 0, Math.sin(a) * 0.95);
+    ring.add(lamp);
+  }
+  g.add(ring);
+
+  // Four radial weapon arms with muzzle pods.
+  const arms = new THREE.Group();
+  for (let i = 0; i < 4; i++) {
+    const a = (i / 4) * Math.PI * 2 + Math.PI / 4;
+    const arm = new THREE.Mesh(box, armorDark);
+    arm.scale.set(0.12, 0.12, 0.7);
+    arm.position.set(Math.cos(a) * 0.5, -0.18, Math.sin(a) * 0.5);
+    arm.rotation.y = -a + Math.PI / 2;
+    arms.add(arm);
+    const pod = new THREE.Mesh(new THREE.ConeGeometry(0.13, 0.28, 6), trim);
+    pod.position.set(Math.cos(a) * 0.85, -0.18, Math.sin(a) * 0.85);
+    pod.rotation.x = Math.PI / 2; pod.rotation.z = -a;
+    arms.add(pod);
+    const glow = new THREE.Mesh(new THREE.SphereGeometry(0.06, 6, 6), coreMat);
+    glow.position.set(Math.cos(a) * 0.99, -0.18, Math.sin(a) * 0.99);
+    arms.add(glow);
+  }
+  g.add(arms);
+
+  // Spiked crown on top.
+  for (let i = 0; i < 6; i++) {
+    const a = (i / 6) * Math.PI * 2;
+    const horn = new THREE.Mesh(new THREE.ConeGeometry(0.08, 0.4, 4), trim);
+    horn.position.set(Math.cos(a) * 0.3, 0.5, Math.sin(a) * 0.3);
+    horn.rotation.z = -Math.cos(a) * 0.4;
+    horn.rotation.x = Math.sin(a) * 0.4;
+    g.add(horn);
+  }
+
+  // Underglow.
+  const under = new THREE.Mesh(
+    new THREE.ConeGeometry(0.4, 0.5, 10),
+    new THREE.MeshBasicMaterial({ color: 0xff2040, transparent: true, opacity: 0.4, blending: THREE.AdditiveBlending, depthWrite: false })
+  );
+  under.rotation.x = Math.PI; under.position.y = -0.6;
+  g.add(under);
+
+  g.scale.setScalar(E.types.boss.meshScale);
+  g.traverse((m) => { if (m.isMesh) m.castShadow = true; });
+  return {
+    group: g, body, core, ring,
+    spinners: [
+      { mesh: body, ax: 0, ay: 0.3, az: 0 },
+      { mesh: arms, ax: 0, ay: -0.5, az: 0 },
+    ],
+  };
 }
 
 function buildMesh(type) {
   if (type === 'rusher') return buildRusherMesh();
-  if (type === 'boss') {
-    return buildDroneMesh({
-      scale: E.types.boss.meshScale,
-      shellColor: 0x4a3550,
-      coreColor: 0xff2040,
-    });
-  }
+  if (type === 'boss') return buildBossMesh();
   return buildDroneMesh();
 }
 
@@ -113,18 +247,27 @@ class Enemy {
     this.cooldown = rand(0.5, 1.5);
     this.strafeDir = Math.random() < 0.5 ? -1 : 1;
     this.active = false;
+    // Boss specials.
+    this.novaCd = 0;
+    this.slamCd = 0;
+    this.special = null;      // null | 'nova' | 'slam'
+    this.specialT = 0;
+    this.flankAngle = 0;
+    this.flankT = 0;
     this.mesh.visible = false;
   }
 
   // Meshes are rebuilt only when this pool slot changes type.
   _ensureMesh(type) {
     if (this.type === type) return;
-    if (this.mesh) this.scene.remove(this.mesh);
-    const { group, body, core, ring } = buildMesh(type);
+    if (this.mesh) { this.scene.remove(this.mesh); disposeObj(this.mesh); }
+    const { group, body, core, ring, spinners } = buildMesh(type);
     this.mesh = group;
     this.body = body;
     this.core = core;
     this.ring = ring;
+    this.spinners = spinners || [];
+    this.coreZ = core.position.z; // local forward offset of the weak-point
     this.coreBaseColor = core.material.color.clone();
     this.mesh.position.copy(this.position);
     this.scene.add(group);
@@ -144,6 +287,11 @@ class Enemy {
     this.losT = 99;
     this.cooldown = rand(0.8, 1.6);
     this.active = true;
+    this.novaCd = rand(this.stats.novaCooldownMin || 6, this.stats.novaCooldownMax || 8);
+    this.slamCd = this.stats.slamCooldown || 9;
+    this.special = null;
+    this.specialT = 0;
+    this.flankT = 0;
     this.mesh.visible = true;
     this.mesh.rotation.set(0, this.yaw, 0);
     this.mesh.scale.setScalar(0.01);
@@ -179,23 +327,20 @@ export class EnemyManager {
     this.onWaveCleared = null;
     this.onPlayerDamaged = null; // cb(amount, sourcePosition)
 
-    // ---- Projectile pool ----
+    // ---- Projectile pool (each has its own material so bolts can be tinted) ----
     this.projectiles = [];
-    const pGeo = new THREE.SphereGeometry(0.09, 6, 5);
-    const pMat = new THREE.MeshBasicMaterial({ color: 0xff7a55 });
+    const pGeo = new THREE.SphereGeometry(0.1, 8, 6);
+    const haloGeo = new THREE.SphereGeometry(0.22, 8, 6);
     for (let i = 0; i < MAX_PROJECTILES; i++) {
-      const m = new THREE.Mesh(pGeo, pMat);
+      const m = new THREE.Mesh(pGeo, new THREE.MeshBasicMaterial({ color: 0xff7a55 }));
       m.visible = false;
-      const halo = new THREE.Mesh(
-        new THREE.SphereGeometry(0.2, 6, 5),
-        new THREE.MeshBasicMaterial({
-          color: 0xff5030, transparent: true, opacity: 0.35,
-          blending: THREE.AdditiveBlending, depthWrite: false,
-        })
-      );
+      const halo = new THREE.Mesh(haloGeo, new THREE.MeshBasicMaterial({
+        color: 0xff5030, transparent: true, opacity: 0.35,
+        blending: THREE.AdditiveBlending, depthWrite: false,
+      }));
       m.add(halo);
       scene.add(m);
-      this.projectiles.push({ mesh: m, vel: new THREE.Vector3(), life: 0 });
+      this.projectiles.push({ mesh: m, halo, vel: new THREE.Vector3(), life: 0, dmg: E.projectileDamage });
     }
 
     this._v = new THREE.Vector3();
@@ -270,7 +415,7 @@ export class EnemyManager {
       if (!e.active || e.state === STATE.DYING || e.state === STATE.SPAWNING) continue;
       const p = e.position;
       const s = e.baseScale;
-      this._v.set(0, 0, (e.type === 'rusher' ? 0.24 : 0.32) * s)
+      this._v.set(0, 0, e.coreZ * s)
         .applyQuaternion(e.mesh.quaternion).add(p);
       const distCore = this._raySphere(origin, dir, this._v, e.stats.coreRadius);
       const distBody = this._raySphere(origin, dir, p, e.stats.bodyRadius);
@@ -325,6 +470,11 @@ export class EnemyManager {
     }
   }
 
+  _tintProjectile(p, color, haloColor) {
+    p.mesh.material.color.setHex(color);
+    p.halo.material.color.setHex(haloColor);
+  }
+
   _fireProjectile(enemy, targetPos) {
     const p = this.projectiles.find((pr) => pr.life <= 0);
     if (!p) return;
@@ -336,8 +486,82 @@ export class EnemyManager {
     this._v2.z += rand(-0.7, 0.7);
     p.vel.subVectors(this._v2, p.mesh.position).normalize().multiplyScalar(E.projectileSpeed);
     p.life = 3;
+    p.dmg = E.projectileDamage;
+    p.mesh.scale.setScalar(1);
+    this._tintProjectile(p, enemy.type === 'boss' ? 0xff5aa0 : 0xff7a55, enemy.type === 'boss' ? 0xff3080 : 0xff5030);
     p.mesh.visible = true;
     audio.enemyShoot();
+  }
+
+  // Boss special: radial plasma nova — a ring of bolts fired outward.
+  _fireNova(enemy) {
+    const T = enemy.stats;
+    const cx = enemy.position.x, cy = enemy.position.y, cz = enemy.position.z;
+    for (let i = 0; i < T.novaCount; i++) {
+      const p = this.projectiles.find((pr) => pr.life <= 0);
+      if (!p) break;
+      const a = (i / T.novaCount) * Math.PI * 2;
+      p.mesh.position.set(cx + Math.cos(a) * 0.8, cy, cz + Math.sin(a) * 0.8);
+      p.vel.set(Math.cos(a) * T.novaSpeed, rand(-0.5, 0.5), Math.sin(a) * T.novaSpeed);
+      p.life = 4;
+      p.dmg = E.projectileDamage;
+      p.mesh.scale.setScalar(1.3);
+      this._tintProjectile(p, 0xc060ff, 0x8020ff);
+      p.mesh.visible = true;
+    }
+    this.effects.ring(new THREE.Vector3(cx, cy, cz));
+    this.effects.burst(enemy.position, 0xc060ff, 20, 6, 2, 0.5);
+    audio.bossSpawn();
+  }
+
+  // Boss special: ground slam — AoE burst that hurts the player if in range/LOS.
+  _bossSlam(enemy, player) {
+    const T = enemy.stats;
+    const pos = enemy.position.clone();
+    this.effects.ring(new THREE.Vector3(pos.x, 0.2, pos.z));
+    this.effects.burst(new THREE.Vector3(pos.x, 0.3, pos.z), 0xff2040, 40, 12, 4, 0.9);
+    this.effects.explosion(new THREE.Vector3(pos.x, 0.4, pos.z));
+    audio.grenadeExplode();
+    if (player.alive) {
+      const d = Math.hypot(player.position.x - pos.x, player.position.z - pos.z);
+      if (d < T.slamRadius && this._hasLOS(pos, player.position)) {
+        const dmg = Math.round(T.slamDamage * (1 - 0.5 * d / T.slamRadius)); // falloff
+        player.takeDamage(dmg);
+        this.onPlayerDamaged?.(dmg, pos);
+      }
+    }
+  }
+
+  // Boss special driver. Returns true while a special is winding up (the boss
+  // braces and holds fire). Slam triggers when the player closes in; nova is on
+  // a timer. Both telegraph before they land.
+  _updateBossSpecial(e, player, dt, dist, sees) {
+    const T = e.stats;
+    if (e.special) {
+      e.specialT -= dt;
+      if (e.specialT <= 0) {
+        if (e.special === 'nova') this._fireNova(e);
+        else if (e.special === 'slam') this._bossSlam(e, player);
+        e.special = null;
+      }
+      return true;
+    }
+    e.novaCd -= dt;
+    e.slamCd -= dt;
+    if (player.alive && sees && dist < T.slamRange && e.slamCd <= 0) {
+      e.special = 'slam';
+      e.specialT = T.slamWindup;
+      e.slamCd = T.slamCooldown;
+      this.effects.ring(new THREE.Vector3(e.position.x, 0.2, e.position.z)); // warning
+      return true;
+    }
+    if (player.alive && sees && e.novaCd <= 0 && dist < T.attackRange) {
+      e.special = 'nova';
+      e.specialT = T.novaWindup;
+      e.novaCd = rand(T.novaCooldownMin, T.novaCooldownMax);
+      return true;
+    }
+    return false;
   }
 
   update(dt, player) {
@@ -363,9 +587,16 @@ export class EnemyManager {
 
       if (e.type === 'boss' && e.state !== STATE.DYING) this.activeBoss = e;
 
-      // Hit flash: core tints toward white
-      const f = e.hitFlash;
-      e.core.material.color.copy(e.coreBaseColor).lerp(WHITE, f);
+      // Core tint: hit-flash white, plus a bright pulse while a boss charges.
+      let coreBright = e.hitFlash;
+      if (e.type === 'boss' && e.special) {
+        coreBright = Math.max(coreBright, 0.45 + 0.4 * Math.sin(e.stateT * 34));
+        const s = 1.25 + 0.4 * Math.sin(e.stateT * 34);
+        e.core.scale.set(s, s * 0.7, s);
+      } else if (e.type === 'boss') {
+        e.core.scale.set(1, 0.7, 1);
+      }
+      e.core.material.color.copy(e.coreBaseColor).lerp(WHITE, coreBright);
 
       if (e.state === STATE.DYING) {
         this._updateDying(e, dt);
@@ -426,15 +657,30 @@ export class EnemyManager {
           }
           if (e.losT > 6 || !player.alive) { e.state = STATE.WANDER; e.wanderT = 0; }
         } else {
-          // Drones/boss: hold preferred range and orbit-strafe.
+          // Drones & boss: close on the player and orbit-strafe hard.
+          const busy = e.type === 'boss' && this._updateBossSpecial(e, player, dt, d, seesPlayer);
+
           const rangeErr = d - T.preferredRange;
-          moveDir.copy(flat).multiplyScalar(clamp(rangeErr * 0.35, -1, 1));
-          moveDir.x += -flat.z * 0.7 * e.strafeDir;
-          moveDir.z += flat.x * 0.7 * e.strafeDir;
-          if (Math.random() < dt * 0.25) e.strafeDir *= -1;
+          moveDir.copy(flat).multiplyScalar(clamp(rangeErr * 0.5, -1, 1));
+
+          // Anti-camp: drones circle aggressively and flip flank sides so they
+          // don't queue up in a corner-camper's crosshair.
+          let strafeGain = 0.7;
+          if (e.type === 'drone') {
+            e.flankT -= dt;
+            if (e.flankT <= 0) {
+              e.flankT = rand(1.5, 3.5);
+              if (Math.random() < (T.flankChance || 0)) e.strafeDir *= -1;
+            }
+            strafeGain = 0.95;
+          }
+          moveDir.x += -flat.z * strafeGain * e.strafeDir;
+          moveDir.z += flat.x * strafeGain * e.strafeDir;
+          if (Math.random() < dt * 0.15) e.strafeDir *= -1;
+          if (busy) moveDir.multiplyScalar(0.15); // brace during a special windup
           if (moveDir.lengthSq() > 1) moveDir.normalize();
 
-          if (T.canShoot && player.alive && seesPlayer && distToPlayer < T.attackRange) {
+          if (!busy && T.canShoot && player.alive && seesPlayer && distToPlayer < T.attackRange) {
             if (e.burstLeft > 0) {
               e.burstT -= dt;
               if (e.burstT <= 0) {
@@ -452,7 +698,7 @@ export class EnemyManager {
             }
           }
 
-          if (e.losT > 3.5 || !player.alive) { e.state = STATE.WANDER; e.wanderT = 0; }
+          if (e.losT > 4.5 || !player.alive) { e.state = STATE.WANDER; e.wanderT = 0; }
         }
       }
 
@@ -495,9 +741,14 @@ export class EnemyManager {
       e.mesh.rotation.y = e.yaw;
       e.mesh.position.copy(e.position);
 
-      // Idle spin flourishes
-      e.ring.rotation.z += dt * (e.type === 'rusher' ? 4 : 1.5);
-      e.body.rotation.y += dt * 0.4;
+      // Idle spin flourishes.
+      if (e.type === 'boss') e.ring.rotation.y += dt * 0.6;
+      else e.ring.rotation.z += dt * (e.type === 'rusher' ? 4 : 1.5);
+      for (const sp of e.spinners) {
+        sp.mesh.rotation.x += sp.ax * dt;
+        sp.mesh.rotation.y += sp.ay * dt;
+        sp.mesh.rotation.z += sp.az * dt;
+      }
     }
 
     this._updateProjectiles(dt, player);
@@ -566,8 +817,8 @@ export class EnemyManager {
       let impact = pos.y < 0.02;
 
       if (!impact && player.alive && pointInAABB(pos, pBox)) {
-        player.takeDamage(E.projectileDamage);
-        this.onPlayerDamaged?.(E.projectileDamage, pos.clone().addScaledVector(p.vel, -0.5));
+        player.takeDamage(p.dmg);
+        this.onPlayerDamaged?.(p.dmg, pos.clone().addScaledVector(p.vel, -0.5));
         impact = true;
       }
 
@@ -590,3 +841,13 @@ export class EnemyManager {
 }
 
 const WHITE = new THREE.Color(1, 1, 1);
+
+function disposeObj(obj) {
+  obj.traverse((o) => {
+    if (o.isMesh) {
+      o.geometry?.dispose();
+      const mats = Array.isArray(o.material) ? o.material : [o.material];
+      for (const m of mats) m?.dispose();
+    }
+  });
+}

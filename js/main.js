@@ -792,6 +792,7 @@ window.__game = {
   get totalKills() { return totalKills; },
   get boostT() { return boostT; },
   set wave(n) { wave = n; },
+  equipWeapon(id) { const w = CONFIG.weapons.find((x) => x.id === id); if (w) weapon.setStats(w); },
 };
 
 applyGraphics();

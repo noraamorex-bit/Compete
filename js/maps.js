@@ -167,6 +167,57 @@ class B {
     this.solid(H + T / 2, height / 2, 0, T, height, size, mat);
   }
 
+  // Decorated perimeter: base slab + inward rib pilasters, a top cap rail, a
+  // glowing trim strip, and buttress feet. Reads as built architecture, not a
+  // flat box. opts: { wall, rib, cap, trim, ribEvery, buttress }.
+  panelWalls(size, height, thickness, o) {
+    const H = size / 2, T = thickness;
+    // Each side: center + length-axis (ax) + inward normal (nz).
+    const sides = [
+      { cx: 0, cz: -H - T / 2, ax: [1, 0], nz: [0, 1] },
+      { cx: 0, cz: H + T / 2, ax: [1, 0], nz: [0, -1] },
+      { cx: -H - T / 2, cz: 0, ax: [0, 1], nz: [1, 0] },
+      { cx: H + T / 2, cz: 0, ax: [0, 1], nz: [-1, 0] },
+    ];
+    const ribEvery = o.ribEvery || 6;
+    const n = Math.max(2, Math.round(size / ribEvery));
+    for (const w of sides) {
+      const alongX = w.ax[0] !== 0;
+      const baseX = alongX ? size + T * 2 : T;
+      const baseZ = alongX ? T : size + T * 2;
+      this.solid(w.cx, height / 2, w.cz, baseX, height, baseZ, o.wall);
+
+      // Top cap rail.
+      const capX = alongX ? size + T * 2 : T * 1.5;
+      const capZ = alongX ? T * 1.5 : size + T * 2;
+      this.deco(w.cx, height + 0.13, w.cz, capX, 0.26, capZ, o.cap || o.wall);
+
+      // Glowing trim strip on the inner face near the top.
+      if (o.trim) {
+        const tin = 0.03;
+        this.deco(
+          w.cx + w.nz[0] * (T / 2 + tin), height - 0.7, w.cz + w.nz[1] * (T / 2 + tin),
+          alongX ? size * 0.98 : 0.05, 0.16, alongX ? 0.05 : size * 0.98, o.trim
+        );
+      }
+
+      // Inward rib pilasters + buttress feet.
+      const ribDepth = 0.32;
+      const off = T / 2 + ribDepth / 2 - 0.02;
+      for (let i = 0; i <= n; i++) {
+        const d = -H + (i / n) * size;
+        const px = w.cx + w.ax[0] * d + w.nz[0] * off;
+        const pz = w.cz + w.ax[1] * d + w.nz[1] * off;
+        const rx = alongX ? 0.5 : ribDepth;
+        const rz = alongX ? ribDepth : 0.5;
+        this.deco(px, height * 0.52, pz, rx, height * 0.92, rz, o.rib || o.wall);
+        if (o.buttress) {
+          this.solid(px, 0.6, pz, rx + 0.35, 1.2, rz + 0.35, o.buttress);
+        }
+      }
+    }
+  }
+
   ground(size, mat, apronColor) {
     const g = new THREE.Mesh(new THREE.PlaneGeometry(size, size), mat);
     g.rotation.x = -Math.PI / 2;
@@ -239,11 +290,11 @@ function buildArena(scene, b) {
   const matGlow = new THREE.MeshBasicMaterial({ color: 0x4de8ff });
   const matGlowWarm = new THREE.MeshBasicMaterial({ color: 0xffb060 });
 
-  b.walls(62, 5, 1.2, matWall);
-  b.deco(0, 3.4, -30.98, 56, 0.14, 0.02, matGlow);
-  b.deco(0, 3.4, 30.98, 56, 0.14, 0.02, matGlow);
-  b.deco(-30.98, 3.4, 0, 0.02, 0.14, 56, matGlow);
-  b.deco(30.98, 3.4, 0, 0.02, 0.14, 56, matGlow);
+  // Paneled industrial ramparts: strut ribs, cap rail, cyan trim, buttress feet.
+  b.panelWalls(62, 5, 1.2, {
+    wall: matWall, rib: matBlockAlt, cap: matBlock, trim: matGlow,
+    buttress: matBlockAlt, ribEvery: 5.5,
+  });
 
   b.solid(0, 0.75, 0, 12, 1.5, 12, matPlatform);
   b.deco(0, 1.515, 0, 3.5, 0.02, 3.5, matGlowWarm);
@@ -340,12 +391,17 @@ function buildGlacier(scene, b) {
   pond.position.y = 0.015;
   b.group.add(pond);
 
-  // Ice-cliff perimeter.
-  const matCliff = std(0xc2d8e8, { roughness: 0.7 });
-  b.walls(62, 6, 1.4, matCliff);
-
   const matIce = new THREE.MeshStandardMaterial({
     color: 0xa8dcf0, roughness: 0.15, metalness: 0.1, transparent: true, opacity: 0.85,
+  });
+
+  // Layered ice-cliff perimeter: stepped ice buttresses, snow caps, blue veins.
+  const matCliff = std(0xc2d8e8, { roughness: 0.7 });
+  const matSnowCap = std(0xf4f8fc, { roughness: 1 });
+  const matVein = new THREE.MeshBasicMaterial({ color: 0x6fd0f0 });
+  b.panelWalls(62, 6, 1.4, {
+    wall: matCliff, rib: matIce, cap: matSnowCap, trim: matVein,
+    buttress: matCliff, ribEvery: 6,
   });
   const matHut = std(0xc9d2d8, { roughness: 0.6 });
   const matHutDark = std(0x77828c, { roughness: 0.7 });
@@ -410,13 +466,14 @@ function buildGlacier(scene, b) {
 // MAP 3 — EMBERFALL (volcanic foundry at night; lava, obsidian)
 // ============================================================
 function buildEmber(scene, b) {
-  scene.fog = new THREE.Fog(0x2a1418, 55, 200);
-  b.group.add(skyDome(0x06030a, 0x2a0f12, 0xff4a1a));
+  // Brighter "molten dusk" rather than pitch night — readable but still moody.
+  scene.fog = new THREE.Fog(0x4a2822, 60, 220);
+  b.group.add(skyDome(0x2a2340, 0x6a3a44, 0xff7a3a));
 
-  b.group.add(new THREE.HemisphereLight(0xff9a60, 0x241418, 0.85));
-  b.group.add(new THREE.AmbientLight(0x9a6a58, 0.85));
-  const sun = new THREE.DirectionalLight(0xff8055, 1.1);
-  sun.position.set(-30, 30, -20);
+  b.group.add(new THREE.HemisphereLight(0xffb37a, 0x4a2c2a, 1.5));
+  b.group.add(new THREE.AmbientLight(0xc79070, 1.15));
+  const sun = new THREE.DirectionalLight(0xffb27a, 2.0);
+  sun.position.set(-30, 40, -20);
   if (b.shadows) {
     sun.castShadow = true;
     sun.shadow.mapSize.set(2048, 2048);
@@ -426,10 +483,14 @@ function buildEmber(scene, b) {
     sun.shadow.bias = -0.0008;
   }
   b.group.add(sun);
+  // Cool moon fill from the opposite side so shadowed faces aren't black.
+  const moon = new THREE.DirectionalLight(0x8fa0d8, 0.7);
+  moon.position.set(28, 30, 24);
+  b.group.add(moon);
 
   // Cracked basalt ground.
   const basaltTex = canvasTex((g) => {
-    g.fillStyle = '#3a333d'; g.fillRect(0, 0, 256, 256);
+    g.fillStyle = '#544954'; g.fillRect(0, 0, 256, 256);
     g.strokeStyle = 'rgba(0,0,0,.6)'; g.lineWidth = 2;
     for (let i = 0; i < 14; i++) {
       g.beginPath();
@@ -446,7 +507,7 @@ function buildEmber(scene, b) {
     }
   });
   basaltTex.repeat.set(12, 12);
-  b.ground(62, new THREE.MeshStandardMaterial({ map: basaltTex, roughness: 1 }), 0x17141a);
+  b.ground(62, new THREE.MeshStandardMaterial({ map: basaltTex, roughness: 1 }), 0x2c2530);
 
   // Glowing lava channels crossing the field, with point lights above them.
   const matLava = new THREE.MeshBasicMaterial({ color: 0xff5a1e });
@@ -463,15 +524,16 @@ function buildEmber(scene, b) {
     b.group.add(l);
   }
 
-  // Perimeter: dark basalt ramparts with glowing fissures.
-  const matRampart = std(0x453c48, { roughness: 0.75 });
-  b.walls(62, 6, 1.4, matRampart);
-  for (const [x, z, w, ry] of [[0, -30.9, 40, 0], [0, 30.9, 40, 0], [-30.9, 0, 40, Math.PI / 2], [30.9, 0, 40, Math.PI / 2]]) {
-    b.deco(x, 1.1, z, w, 0.1, 0.06, matLava, ry);
-  }
-
   // Obsidian columns — glossy hex prisms, tall and moody.
-  const matObsidian = std(0x322a3e, { roughness: 0.25, metalness: 0.2 });
+  const matObsidian = std(0x4a3e58, { roughness: 0.25, metalness: 0.2 });
+
+  // Perimeter: basalt ramparts with obsidian buttresses, iron caps, lava veins.
+  const matRampart = std(0x6a5b68, { roughness: 0.75 });
+  const matIronTrim = std(0x7a6a78, { roughness: 0.5, metalness: 0.3 });
+  b.panelWalls(62, 6, 1.4, {
+    wall: matRampart, rib: matObsidian, cap: matIronTrim, trim: matLava,
+    buttress: matObsidian, ribEvery: 6,
+  });
   const cols = [[-12, -12, 5.5, 1.3], [12, 12, 5.5, 1.3], [-14, 10, 4, 1.0], [14, -10, 4, 1.0], [-4, 20, 4.6, 1.1], [4, -20, 4.6, 1.1]];
   for (const [x, z, h, r] of cols) {
     b.cyl(new THREE.CylinderGeometry(r * 0.85, r, h, 6), matObsidian, x, h / 2, z, r * 0.75, h);

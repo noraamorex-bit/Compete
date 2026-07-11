@@ -10,116 +10,259 @@ const REST_POS = new THREE.Vector3(0.24, -0.22, -0.38);
 // Sight dot sits at local (0, 0.093, z); this root offset centers it on the camera.
 const ADS_POS = new THREE.Vector3(0, -0.093, -0.46);
 
-// Parametric low-poly rifle. The camera sees the gun's left (-x) flank, so
-// mechanical details (port, charging handle, vents) live on that side.
-// The optic's glow dot sits at local (0, 0.093, z) — ADS_POS aligns to it.
-function buildRifleMesh(stats) {
-  const g = new THREE.Group();
-  // Note: keep metalness low — there's no environment map, so high
-  // metalness renders as pure black regardless of base color.
-  const metal = new THREE.MeshStandardMaterial({ color: 0x4d5666, roughness: 0.45, metalness: 0.35 });
-  const steel = new THREE.MeshStandardMaterial({ color: 0x353d49, roughness: 0.4, metalness: 0.45 });
-  const polymer = new THREE.MeshStandardMaterial({ color: 0x525b6a, roughness: 0.8, metalness: 0.05 });
-  const polymerDark = new THREE.MeshStandardMaterial({ color: 0x343a45, roughness: 0.8, metalness: 0.05 });
-  const accent = new THREE.MeshStandardMaterial({ color: stats.accent, roughness: 0.5, metalness: 0.25 });
-  const glow = new THREE.MeshBasicMaterial({ color: 0x4de8ff });
-  const box = new THREE.BoxGeometry(1, 1, 1);
+// ---------- Weapon viewmodels ----------
+// Each weapon has its own silhouette. The one hard constraint: every gun must
+// place its sight glow at local (0, 0.093, -0.02) so ADS_POS aligns it with the
+// crosshair. Each builder returns { group, mag, muzzleZ }; `mag` is the part the
+// reload animation drops/rotates, `muzzleZ` is where the muzzle flash sits.
 
+const BOX = new THREE.BoxGeometry(1, 1, 1);
+const AIM = [0, 0.093, -0.02]; // shared aim point
+
+function gunKit(stats) {
+  const g = new THREE.Group();
+  // Keep metalness low — no env map, so high metalness renders black.
+  const mats = {
+    metal: new THREE.MeshStandardMaterial({ color: 0x4d5666, roughness: 0.45, metalness: 0.35 }),
+    steel: new THREE.MeshStandardMaterial({ color: 0x353d49, roughness: 0.4, metalness: 0.45 }),
+    polymer: new THREE.MeshStandardMaterial({ color: 0x525b6a, roughness: 0.8, metalness: 0.05 }),
+    dark: new THREE.MeshStandardMaterial({ color: 0x343a45, roughness: 0.8, metalness: 0.05 }),
+    accent: new THREE.MeshStandardMaterial({ color: stats.accent, roughness: 0.5, metalness: 0.25 }),
+    glow: new THREE.MeshBasicMaterial({ color: 0x4de8ff }),
+    wood: new THREE.MeshStandardMaterial({ color: 0x6b4a34, roughness: 0.7, metalness: 0.05 }),
+  };
   const part = (mat, x, y, z, sx, sy, sz, rx = 0, ry = 0, rz = 0) => {
-    const m = new THREE.Mesh(box, mat);
+    const m = new THREE.Mesh(BOX, mat);
     m.position.set(x, y, z);
     m.scale.set(sx, sy, sz);
     m.rotation.set(rx, ry, rz);
     g.add(m);
     return m;
   };
+  const cyl = (mat, x, y, z, r1, r2, h, seg = 8, rx = Math.PI / 2, ry = 0, rz = 0) => {
+    const m = new THREE.Mesh(new THREE.CylinderGeometry(r1, r2, h, seg), mat);
+    m.position.set(x, y, z);
+    m.rotation.set(rx, ry, rz);
+    g.add(m);
+    return m;
+  };
+  return { g, mats, part, cyl };
+}
 
-  const barrelLen = 0.34 * stats.barrel;
-  const barrelEnd = -0.25 - barrelLen;
-  const guardLen = barrelLen * 0.72;
-  const guardMid = -0.25 - guardLen / 2;
+// Red-dot optic (open tube, glow at aim point).
+function addRedDot(part, m) {
+  part(m.metal, -0.02, 0.082, -0.02, 0.006, 0.045, 0.065);
+  part(m.metal, 0.02, 0.082, -0.02, 0.006, 0.045, 0.065);
+  part(m.metal, 0, 0.107, -0.02, 0.046, 0.007, 0.065);
+  part(m.metal, 0, 0.062, -0.02, 0.046, 0.008, 0.065);
+  part(m.glow, ...AIM, 0.008, 0.008, 0.004);
+}
 
-  // ---- Receiver ----
-  part(metal, 0, 0.012, -0.09, 0.05, 0.046, 0.34);                    // upper
-  part(polymer, 0, -0.028, -0.06, 0.048, 0.05, 0.27);                 // lower
-  part(steel, -0.026, 0.012, -0.03, 0.004, 0.02, 0.07);               // ejection port
-  part(steel, -0.03, 0.034, 0.045, 0.014, 0.01, 0.045);               // charging handle
-  part(polymerDark, -0.027, -0.02, -0.015, 0.004, 0.014, 0.03);       // mag release
-  part(steel, -0.027, -0.005, 0.02, 0.005, 0.008, 0.035, 0, 0, 0.5);  // selector lever
+// Low iron sights: rear notch + front post, glow bead at aim point.
+function addIronSights(part, m, frontZ) {
+  part(m.steel, -0.014, 0.078, 0.02, 0.006, 0.03, 0.01);   // rear posts
+  part(m.steel, 0.014, 0.078, 0.02, 0.006, 0.03, 0.01);
+  part(m.steel, 0, 0.076, frontZ, 0.008, 0.032, 0.01);     // front post
+  part(m.glow, ...AIM, 0.01, 0.01, 0.006);                 // bead
+}
 
-  // ---- Top rail with notches ----
-  part(metal, 0, 0.043, -0.09, 0.032, 0.012, 0.32);
-  for (let i = 0; i < 7; i++) {
-    part(steel, 0, 0.051, -0.21 + i * 0.04, 0.034, 0.004, 0.016);
-  }
+// Trigger group shared by long guns.
+function addGrip(part, m, gz = 0.045) {
+  part(m.polymer, 0, -0.09, gz, 0.04, 0.095, 0.052, -0.28);
+  part(m.dark, 0, -0.128, gz + 0.013, 0.042, 0.02, 0.05, -0.28);
+  part(m.steel, 0, -0.06, gz - 0.047, 0.007, 0.028, 0.01, 0.25);
+  part(m.metal, 0, -0.082, gz - 0.045, 0.036, 0.006, 0.075);
+}
 
-  // ---- Handguard: octagonal (two boxes, one rotated 45°) + vents ----
-  part(polymer, 0, 0.008, guardMid, 0.046, 0.048, guardLen);
-  part(polymer, 0, 0.008, guardMid, 0.04, 0.04, guardLen * 0.98, 0, 0, Math.PI / 4);
-  const vents = Math.max(2, Math.round(guardLen / 0.075));
-  for (let i = 0; i < vents; i++) {
-    const vz = -0.27 - (i + 0.5) * (guardLen - 0.04) / vents;
-    part(polymerDark, -0.025, 0.008, vz, 0.003, 0.016, 0.032);
-    part(polymerDark, 0, -0.019, vz, 0.016, 0.003, 0.032);            // bottom vent
-  }
-  part(accent, 0, 0.008, -0.25 - guardLen + 0.015, 0.05, 0.052, 0.014); // guard end band
+function finish(g, mag, muzzleZ) {
+  g.traverse((o) => { if (o.isMesh) { o.castShadow = false; o.receiveShadow = false; } });
+  return { group: g, mag, muzzleZ };
+}
 
-  // ---- Barrel, muzzle device, front sight ----
-  part(steel, 0, 0.012, (barrelEnd - 0.25 - guardLen) / 2 - 0.02, 0.02, 0.02, barrelLen - guardLen + 0.02);
-  part(metal, 0, 0.012, barrelEnd - 0.025, 0.03, 0.032, 0.06);        // muzzle brake
-  part(polymerDark, -0.017, 0.012, barrelEnd - 0.02, 0.003, 0.014, 0.035); // brake slot
-  part(polymerDark, 0.017, 0.012, barrelEnd - 0.02, 0.003, 0.014, 0.035);
-  part(steel, 0, 0.045, barrelEnd + 0.06, 0.007, 0.03, 0.008);        // front sight post
-
-  // ---- Red-dot optic: open tube you can see through; dot at y 0.093 ----
-  part(metal, -0.02, 0.082, -0.02, 0.006, 0.045, 0.065);              // left plate
-  part(metal, 0.02, 0.082, -0.02, 0.006, 0.045, 0.065);               // right plate
-  part(metal, 0, 0.107, -0.02, 0.046, 0.007, 0.065);                  // hood
-  part(metal, 0, 0.062, -0.02, 0.046, 0.008, 0.065);                  // base
-  part(glow, 0, 0.093, -0.02, 0.008, 0.008, 0.004);                   // the dot
-
-  // ---- Grip, trigger, trigger guard ----
-  part(polymer, 0, -0.09, 0.045, 0.04, 0.095, 0.052, -0.28);          // angled grip
-  part(polymerDark, 0, -0.128, 0.058, 0.042, 0.02, 0.05, -0.28);      // grip base
-  part(steel, 0, -0.06, -0.002, 0.007, 0.028, 0.01, 0.25);            // trigger
-  part(metal, 0, -0.082, 0.0, 0.036, 0.006, 0.075);                   // guard bottom
-  part(metal, 0, -0.066, -0.035, 0.036, 0.03, 0.006);                 // guard front
-  part(metal, 0, -0.066, 0.036, 0.036, 0.03, 0.006);                  // guard rear
-
-  // ---- Magazine (animated during reload) ----
+// ===== VOLT-7 — balanced assault carbine =====
+function buildAR(stats) {
+  const { g, mats: m, part } = gunKit(stats);
+  part(m.metal, 0, 0.012, -0.09, 0.05, 0.046, 0.34);
+  part(m.polymer, 0, -0.028, -0.06, 0.048, 0.05, 0.27);
+  part(m.steel, -0.026, 0.012, -0.03, 0.004, 0.02, 0.07);            // port
+  part(m.steel, -0.03, 0.034, 0.045, 0.014, 0.01, 0.045);           // charging handle
+  part(m.metal, 0, 0.043, -0.09, 0.032, 0.012, 0.32);               // rail
+  for (let i = 0; i < 7; i++) part(m.steel, 0, 0.051, -0.21 + i * 0.04, 0.034, 0.004, 0.016);
+  // Octagonal vented handguard
+  part(m.polymer, 0, 0.008, -0.37, 0.046, 0.048, 0.24);
+  part(m.polymer, 0, 0.008, -0.37, 0.04, 0.04, 0.235, 0, 0, Math.PI / 4);
+  for (let i = 0; i < 3; i++) { part(m.dark, -0.025, 0.008, -0.3 - i * 0.06, 0.003, 0.016, 0.032); }
+  part(m.accent, 0, 0.008, -0.48, 0.05, 0.052, 0.014);
+  part(m.steel, 0, 0.012, -0.56, 0.02, 0.02, 0.16);                 // barrel
+  part(m.metal, 0, 0.012, -0.64, 0.03, 0.032, 0.06);               // brake
+  addRedDot(part, m);
+  addGrip(part, m);
+  part(m.metal, 0, 0.008, 0.13, 0.028, 0.028, 0.1);                // buffer tube
+  part(m.dark, 0, -0.022, 0.2, 0.038, 0.07, 0.08);                 // butt
+  part(m.dark, 0, 0.026, 0.19, 0.034, 0.022, 0.09);
+  part(m.accent, -0.02, -0.022, 0.2, 0.002, 0.05, 0.06);
   const mag = new THREE.Group();
   mag.position.set(0, -0.075, -0.085);
-  const isShotgun = (stats.pellets || 1) > 1;
-  const bigMag = stats.magSize >= 60;
-  if (isShotgun) {
-    // Shotgun: under-barrel shell tube instead of a box mag.
-    part(steel, 0, -0.012, guardMid - 0.02, 0.024, 0.024, guardLen + 0.05);
-    const shell = new THREE.Mesh(box, accent);
-    shell.position.set(0, -0.02, 0.02);
-    shell.scale.set(0.03, 0.04, 0.05);
-    mag.add(shell); // token "shell in the loading port" so reloads still read
-  } else {
-    const body = new THREE.Mesh(box, polymerDark);
-    body.scale.set(0.042, bigMag ? 0.16 : 0.12, bigMag ? 0.11 : 0.062);
-    body.position.set(0, bigMag ? -0.06 : -0.045, 0);
-    body.rotation.x = bigMag ? 0 : 0.18;
-    mag.add(body);
-    const base = new THREE.Mesh(box, accent);
-    base.scale.set(0.046, 0.016, bigMag ? 0.115 : 0.068);
-    base.position.set(0, bigMag ? -0.145 : -0.108, bigMag ? 0 : -0.012);
-    base.rotation.x = bigMag ? 0 : 0.18;
-    mag.add(base);
+  const body = new THREE.Mesh(BOX, m.dark); body.scale.set(0.042, 0.12, 0.062);
+  body.position.set(0, -0.045, 0); body.rotation.x = 0.18; mag.add(body);
+  const base = new THREE.Mesh(BOX, m.accent); base.scale.set(0.046, 0.016, 0.068);
+  base.position.set(0, -0.108, -0.012); base.rotation.x = 0.18; mag.add(base);
+  g.add(mag);
+  return finish(g, mag, -0.7);
+}
+
+// ===== SCATTER-6 — pump shotgun: fat receiver, under-tube, sliding pump =====
+function buildShotgun(stats) {
+  const { g, mats: m, part, cyl } = gunKit(stats);
+  part(m.metal, 0, 0.01, -0.08, 0.06, 0.075, 0.32);                // beefy receiver
+  part(m.steel, -0.031, 0.02, -0.02, 0.005, 0.03, 0.09);          // ejection port
+  cyl(m.steel, 0, 0.03, -0.5, 0.032, 0.034, 0.62);               // thick barrel
+  cyl(m.dark, 0, 0.03, -0.82, 0.042, 0.042, 0.04);               // wide choke
+  cyl(m.steel, 0, -0.03, -0.46, 0.026, 0.026, 0.5);              // under mag tube
+  part(m.wood, 0, 0.008, 0.18, 0.05, 0.075, 0.18);               // wood stock
+  part(m.wood, 0, 0.055, 0.13, 0.04, 0.03, 0.1);                 // comb
+  part(m.accent, -0.026, 0.008, 0.18, 0.003, 0.05, 0.12);
+  addIronSights(part, m, -0.78);
+  addGrip(part, m, 0.03);
+  // Pump grip (this is the animated "mag").
+  const mag = new THREE.Group();
+  mag.position.set(0, -0.03, -0.42);
+  const pump = new THREE.Mesh(BOX, m.wood); pump.scale.set(0.06, 0.055, 0.16); mag.add(pump);
+  const ribs = new THREE.Mesh(BOX, m.dark); ribs.scale.set(0.065, 0.012, 0.16); ribs.position.y = 0.02; mag.add(ribs);
+  g.add(mag);
+  return finish(g, mag, -0.86);
+}
+
+// ===== SPARK-9 — compact SMG: stubby, long curved mag, folding stub =====
+function buildSMG(stats) {
+  const { g, mats: m, part, cyl } = gunKit(stats);
+  part(m.metal, 0, 0.012, -0.05, 0.045, 0.06, 0.26);             // short receiver
+  part(m.dark, 0, 0.048, -0.05, 0.03, 0.012, 0.22);             // stubby rail
+  part(m.steel, -0.024, 0.02, 0.0, 0.004, 0.024, 0.05);        // bolt
+  cyl(m.steel, 0, 0.012, -0.26, 0.018, 0.018, 0.2);           // short barrel
+  cyl(m.dark, 0, 0.012, -0.37, 0.028, 0.03, 0.05);            // compensator
+  part(m.accent, 0, 0.012, -0.19, 0.032, 0.034, 0.02);       // barrel shroud band
+  addRedDot(part, m);
+  addGrip(part, m, 0.02);
+  // Folding stub stock
+  part(m.dark, 0, 0.01, 0.12, 0.02, 0.02, 0.11);
+  part(m.dark, 0, -0.03, 0.17, 0.05, 0.012, 0.03);
+  // Long curved magazine (the animated mag)
+  const mag = new THREE.Group();
+  mag.position.set(0, -0.075, -0.02);
+  for (let i = 0; i < 4; i++) {
+    const seg = new THREE.Mesh(BOX, i === 3 ? m.accent : m.dark);
+    seg.scale.set(0.04, 0.05, 0.05);
+    seg.position.set(0, -0.03 - i * 0.045, i * 0.02);
+    seg.rotation.x = 0.32;
+    mag.add(seg);
   }
   g.add(mag);
+  return finish(g, mag, -0.4);
+}
 
-  // ---- Stock: buffer tube, slim butt (kept dark — it sits near the eye in ADS) ----
-  part(metal, 0, 0.008, 0.13, 0.028, 0.028, 0.1);                     // buffer tube
-  part(polymerDark, 0, -0.022, 0.2, 0.038, 0.07, 0.08);               // butt
-  part(polymerDark, 0, 0.026, 0.19, 0.034, 0.022, 0.09);              // cheek riser
-  part(accent, -0.02, -0.022, 0.2, 0.002, 0.05, 0.06);                // side accent stripe
+// ===== STORM-99 — heavy LMG: ribbed shroud, drum, carry handle, bipod =====
+function buildLMG(stats) {
+  const { g, mats: m, part, cyl } = gunKit(stats);
+  part(m.metal, 0, 0.01, -0.08, 0.065, 0.085, 0.4);            // big receiver
+  // Carry handle arch
+  part(m.dark, 0, 0.09, -0.12, 0.02, 0.05, 0.03);
+  part(m.dark, 0, 0.09, 0.02, 0.02, 0.05, 0.03);
+  part(m.metal, 0, 0.115, -0.05, 0.024, 0.02, 0.18);
+  // Ribbed heavy barrel shroud
+  cyl(m.steel, 0, 0.02, -0.5, 0.05, 0.05, 0.5);
+  for (let i = 0; i < 6; i++) cyl(m.dark, 0, 0.02, -0.34 - i * 0.06, 0.055, 0.055, 0.014, 10);
+  cyl(m.metal, 0, 0.02, -0.82, 0.045, 0.05, 0.08);            // muzzle
+  part(m.accent, 0, 0.02, -0.28, 0.058, 0.058, 0.016);
+  addRedDot(part, m);
+  addGrip(part, m, 0.04);
+  // Bipod (folded down under the barrel)
+  part(m.steel, -0.03, -0.16, -0.62, 0.008, 0.16, 0.01, 0.3, 0, 0.25);
+  part(m.steel, 0.03, -0.16, -0.62, 0.008, 0.16, 0.01, 0.3, 0, -0.25);
+  part(m.dark, 0, -0.01, 0.16, 0.05, 0.08, 0.1);             // stock
+  // Big drum magazine (animated)
+  const mag = new THREE.Group();
+  mag.position.set(0, -0.11, -0.06);
+  const drum = new THREE.Mesh(new THREE.CylinderGeometry(0.09, 0.09, 0.06, 14), m.dark);
+  drum.rotation.z = Math.PI / 2; mag.add(drum);
+  const drumFace = new THREE.Mesh(new THREE.CylinderGeometry(0.06, 0.06, 0.07, 14), m.accent);
+  drumFace.rotation.z = Math.PI / 2; mag.add(drumFace);
+  const neck = new THREE.Mesh(BOX, m.dark); neck.scale.set(0.04, 0.08, 0.05); neck.position.y = 0.09; mag.add(neck);
+  g.add(mag);
+  return finish(g, mag, -0.88);
+}
 
-  g.traverse((m) => { if (m.isMesh) { m.castShadow = false; m.receiveShadow = false; } });
-  return { group: g, mag, muzzleZ: barrelEnd - 0.06 };
+// ===== ARC-12 — marksman rifle: long barrel, big scope, skeleton stock =====
+function buildMarksman(stats) {
+  const { g, mats: m, part, cyl } = gunKit(stats);
+  part(m.metal, 0, 0.012, -0.05, 0.048, 0.05, 0.34);
+  part(m.dark, 0, -0.026, -0.03, 0.046, 0.04, 0.26);
+  cyl(m.steel, 0, 0.012, -0.62, 0.017, 0.02, 0.72);          // long thin barrel
+  cyl(m.metal, 0, 0.012, -1.0, 0.03, 0.03, 0.07);           // muzzle brake
+  part(m.accent, 0, 0.012, -0.3, 0.036, 0.038, 0.016);
+  // Big scope tube (reticle glow at aim point)
+  cyl(m.dark, 0, 0.088, -0.02, 0.032, 0.032, 0.3, 12, Math.PI / 2);
+  cyl(m.metal, 0, 0.088, -0.19, 0.04, 0.04, 0.04, 12, Math.PI / 2);   // objective bell
+  cyl(m.metal, 0, 0.088, 0.14, 0.036, 0.036, 0.04, 12, Math.PI / 2);  // eyepiece
+  part(m.dark, -0.02, 0.05, -0.05, 0.01, 0.03, 0.04);        // front ring mount
+  part(m.dark, 0.02, 0.05, -0.05, 0.01, 0.03, 0.04);
+  part(m.glow, ...AIM, 0.012, 0.012, 0.005);                 // reticle
+  addGrip(part, m, 0.03);
+  // Skeleton thumbhole stock
+  part(m.dark, 0, -0.01, 0.16, 0.04, 0.05, 0.14);
+  part(m.dark, 0, 0.05, 0.2, 0.036, 0.024, 0.1);            // cheek rest
+  part(m.dark, 0, -0.06, 0.26, 0.04, 0.06, 0.03);           // butt
+  part(m.accent, -0.021, -0.01, 0.18, 0.002, 0.04, 0.1);
+  // Box magazine (animated)
+  const mag = new THREE.Group();
+  mag.position.set(0, -0.075, -0.06);
+  const body = new THREE.Mesh(BOX, m.dark); body.scale.set(0.04, 0.11, 0.06);
+  body.position.y = -0.04; mag.add(body);
+  const base = new THREE.Mesh(BOX, m.accent); base.scale.set(0.044, 0.014, 0.066);
+  base.position.y = -0.095; mag.add(base);
+  g.add(mag);
+  return finish(g, mag, -1.0);
+}
+
+// ===== TITAN-50 — hand cannon: stubby revolver, big cylinder, no stock =====
+function buildCannon(stats) {
+  const { g, mats: m, part, cyl } = gunKit(stats);
+  part(m.metal, 0, 0.02, -0.04, 0.05, 0.07, 0.18);           // frame
+  part(m.metal, 0, 0.055, -0.08, 0.03, 0.02, 0.2);          // top strap / rib
+  cyl(m.steel, 0, 0.02, -0.22, 0.03, 0.032, 0.22);          // thick short barrel
+  cyl(m.dark, 0, 0.02, -0.34, 0.042, 0.042, 0.04);          // muzzle crown
+  part(m.accent, 0, 0.02, -0.14, 0.036, 0.04, 0.018);       // barrel band
+  addIronSights(part, m, -0.3);
+  // Chunky angled grip (no long body)
+  part(m.wood, 0, -0.11, 0.06, 0.05, 0.13, 0.06, -0.32);
+  part(m.dark, 0, -0.175, 0.085, 0.052, 0.02, 0.06, -0.32);
+  part(m.steel, 0, -0.05, -0.04, 0.007, 0.03, 0.01, 0.25);  // trigger
+  part(m.metal, 0, -0.075, -0.03, 0.036, 0.006, 0.07);      // guard
+  // Revolver cylinder (the animated "mag" — swings/drops on reload)
+  const mag = new THREE.Group();
+  mag.position.set(0, 0.0, -0.02);
+  const cyl6 = new THREE.Mesh(new THREE.CylinderGeometry(0.05, 0.05, 0.11, 12), m.steel);
+  cyl6.rotation.x = Math.PI / 2; mag.add(cyl6);
+  for (let i = 0; i < 6; i++) {
+    const a = (i / 6) * Math.PI * 2;
+    const bore = new THREE.Mesh(new THREE.CylinderGeometry(0.011, 0.011, 0.12, 6), m.dark);
+    bore.rotation.x = Math.PI / 2;
+    bore.position.set(Math.cos(a) * 0.032, Math.sin(a) * 0.032, 0);
+    mag.add(bore);
+  }
+  const flute = new THREE.Mesh(new THREE.CylinderGeometry(0.052, 0.052, 0.02, 12), m.accent);
+  flute.rotation.x = Math.PI / 2; mag.add(flute);
+  g.add(mag);
+  return finish(g, mag, -0.36);
+}
+
+const WEAPON_BUILDERS = {
+  volt: buildAR, scatter: buildShotgun, spark: buildSMG,
+  storm: buildLMG, arc: buildMarksman, titan: buildCannon,
+};
+
+function buildWeaponMesh(stats) {
+  return (WEAPON_BUILDERS[stats.id] || buildAR)(stats);
 }
 
 export class Weapon {
@@ -181,8 +324,15 @@ export class Weapon {
   // Swap the equipped weapon: stats + rebuilt viewmodel.
   setStats(stats) {
     this.stats = stats;
-    if (this.mesh) this.root.remove(this.mesh);
-    const { group, mag, muzzleZ } = buildRifleMesh(stats);
+    if (this.mesh) {
+      this.root.remove(this.mesh);
+      this.mesh.traverse((o) => {
+        if (!o.isMesh) return;
+        if (o.geometry && o.geometry !== BOX) o.geometry.dispose(); // BOX is shared
+        o.material?.dispose();
+      });
+    }
+    const { group, mag, muzzleZ } = buildWeaponMesh(stats);
     this.mesh = group;
     this.magMesh = mag;
     this._magRest = mag.position.clone();
